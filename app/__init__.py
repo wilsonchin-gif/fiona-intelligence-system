@@ -1,0 +1,2 @@
+"""Hourly financial intelligence reporter."""
+

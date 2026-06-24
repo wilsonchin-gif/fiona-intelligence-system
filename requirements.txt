@@ -1,0 +1,2 @@
+# Fiona Production V1 currently uses Python standard library only for the Railway runtime.
+# Keep this file so Railway/Nixpacks detects a Python project consistently.

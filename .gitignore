@@ -1,0 +1,64 @@
+# Fiona / Wilson local secrets
+.env
+.env.*
+!.env.example
+!.env.*.example
+config/*.env
+!config/*.env.example
+
+# Runtime output and generated reports
+reports/
+daily repot/
+*.log
+*.out
+*.err
+
+# Local temp and previews
+tmp/
+temp/
+.cache/
+
+# Python caches and virtual environments
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+env/
+
+# Node / tooling caches
+node_modules
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# macOS and editor files
+.DS_Store
+._*
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Local launchd files with machine-specific paths
+scripts/launchd/*.plist
+
+# Generated media and exports
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.pdf
+*.xlsx
+*.html
+*.svg
+
+# Keep source-controlled examples and docs explicit if needed
+!README.md
+!docs/**/*.md

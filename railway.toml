@@ -1,0 +1,6 @@
+[build]
+builder = "NIXPACKS"
+
+[deploy]
+startCommand = "python3 -m app.fiona_runtime --brief daily run-once"
+restartPolicyType = "NEVER"

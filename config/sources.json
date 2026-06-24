@@ -1,0 +1,78 @@
+{
+  "sources": [
+    {
+      "name": "Yahoo Finance US Indices",
+      "market": "us_equities",
+      "kind": "rss",
+      "url": "https://feeds.finance.yahoo.com/rss/2.0/headline?s=%5EGSPC,%5EIXIC,%5EDJI&region=US&lang=en-US",
+      "weight": 1.1,
+      "language": "en"
+    },
+    {
+      "name": "CNBC Markets",
+      "market": "us_equities",
+      "kind": "rss",
+      "url": "https://www.cnbc.com/id/100003114/device/rss/rss.html",
+      "weight": 1.15,
+      "language": "en"
+    },
+    {
+      "name": "MarketWatch Top Stories",
+      "market": "us_equities",
+      "kind": "rss",
+      "url": "https://feeds.content.dowjones.io/public/rss/mw_topstories",
+      "weight": 1.05,
+      "language": "en"
+    },
+    {
+      "name": "Yahoo Finance China Proxy",
+      "market": "china_equities",
+      "kind": "rss",
+      "url": "https://feeds.finance.yahoo.com/rss/2.0/headline?s=000001.SS,399001.SZ,FXI,MCHI&region=US&lang=en-US",
+      "weight": 1.0,
+      "language": "en"
+    },
+    {
+      "name": "Caixin Global",
+      "market": "china_equities",
+      "kind": "rss",
+      "url": "https://www.caixinglobal.com/rss/",
+      "enabled": false,
+      "weight": 1.15,
+      "language": "en"
+    },
+    {
+      "name": "SCMP China Economy",
+      "market": "china_equities",
+      "kind": "rss",
+      "url": "https://www.scmp.com/rss/91/feed",
+      "weight": 0.95,
+      "language": "en"
+    },
+    {
+      "name": "CoinDesk",
+      "market": "crypto",
+      "kind": "rss",
+      "url": "https://www.coindesk.com/arc/outboundfeeds/rss/?outputType=xml",
+      "enabled": false,
+      "weight": 1.2,
+      "language": "en"
+    },
+    {
+      "name": "Cointelegraph",
+      "market": "crypto",
+      "kind": "rss",
+      "url": "https://cointelegraph.com/rss",
+      "weight": 1.05,
+      "language": "en"
+    },
+    {
+      "name": "Decrypt",
+      "market": "crypto",
+      "kind": "rss",
+      "url": "https://decrypt.co/feed",
+      "weight": 1.0,
+      "language": "en"
+    }
+  ]
+}
