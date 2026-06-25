@@ -4,6 +4,7 @@ import tempfile
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
+from unittest.mock import patch
 
 from app.fiona_memory import FionaMemory
 from app.fiona_runtime import build_payload, due_brief_kinds, resolve_send, run_once, should_push_alerts, snapshot_to_events
@@ -133,6 +134,38 @@ class FionaPhase4Test(unittest.TestCase):
                 __import__("os").environ.pop("FIONA_SEND", None)
             else:
                 __import__("os").environ["FIONA_SEND"] = previous
+
+    def test_wilson_send_is_supported_for_railway(self) -> None:
+        env = __import__("os").environ
+        previous = {name: env.get(name) for name in ("FIONA_SEND", "FIONA_SEND_TELEGRAM", "WILSON_SEND")}
+        try:
+            env.pop("FIONA_SEND", None)
+            env.pop("FIONA_SEND_TELEGRAM", None)
+            env["WILSON_SEND"] = "1"
+            self.assertTrue(resolve_send(False))
+            env["WILSON_SEND"] = "0"
+            self.assertFalse(resolve_send(True))
+        finally:
+            for name, value in previous.items():
+                if value is None:
+                    env.pop(name, None)
+                else:
+                    env[name] = value
+
+    def test_send_true_path_can_be_mocked_without_real_telegram(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with patch("app.fiona_runtime.telegram_send_message", return_value={"ok": True, "result": {"message_id": 12345}}):
+                status = run_once(
+                    output_dir=Path(tmpdir),
+                    brief="daily",
+                    send=True,
+                    timezone_name="UTC",
+                    snapshot_builder=lambda generated_at: sample_snapshot(),
+                )
+
+        self.assertTrue(status["send"])
+        self.assertTrue(status["brief_push"]["ok"])
+        self.assertEqual(status["brief_push"]["message_ids"], [12345])
 
 
 if __name__ == "__main__":

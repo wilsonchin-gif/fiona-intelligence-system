@@ -583,7 +583,7 @@ def format_pct(value: float | None) -> str:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Fiona Intelligence System runtime")
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
-    parser.add_argument("--timezone", default=os.getenv("FIONA_TIMEZONE", DEFAULT_TIMEZONE))
+    parser.add_argument("--timezone", default=first_runtime_env("FIONA_TIMEZONE", "WILSON_TIMEZONE") or DEFAULT_TIMEZONE)
     parser.add_argument("--brief", default=os.getenv("FIONA_BRIEF", "auto"), help="auto, alert, morning, evening, market-news, daily, weekly")
     parser.add_argument("--send", action="store_true", help="Push generated Fiona text to Telegram")
     parser.add_argument("--no-fallback", action="store_true", help="Disable Wilson text fallback if Fiona generation fails")
@@ -593,10 +593,19 @@ def parse_args() -> argparse.Namespace:
 
 
 def resolve_send(send_flag: bool) -> bool:
-    env_value = os.getenv("FIONA_SEND")
-    if env_value is not None:
-        return env_value.strip() == "1"
+    for env_name in ("FIONA_SEND", "FIONA_SEND_TELEGRAM", "WILSON_SEND"):
+        env_value = os.getenv(env_name)
+        if env_value is not None and env_value.strip() != "":
+            return env_value.strip() == "1"
     return bool(send_flag)
+
+
+def first_runtime_env(*names: str) -> str:
+    for name in names:
+        value = os.getenv(name, "").strip()
+        if value:
+            return value
+    return ""
 
 
 def main() -> None:

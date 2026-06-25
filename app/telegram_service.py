@@ -51,15 +51,23 @@ def send_document(document_path: str | Path) -> dict[str, Any]:
 def telegram_config() -> dict[str, str]:
     load_env_file()
     bot_token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
-    chat_id = os.getenv("TELEGRAM_CHAT_ID", "").strip()
+    chat_id = first_env_value("TELEGRAM_GROUP_ID", "TELEGRAM_CHAT_ID", "TELEGRAM_CHANNEL_ID")
     missing = []
     if not bot_token:
         missing.append("TELEGRAM_BOT_TOKEN")
     if not chat_id:
-        missing.append("TELEGRAM_CHAT_ID")
+        missing.append("TELEGRAM_GROUP_ID or TELEGRAM_CHAT_ID")
     if missing:
         raise RuntimeError(f"Missing Telegram env: {', '.join(missing)}")
     return {"bot_token": bot_token, "chat_id": chat_id}
+
+
+def first_env_value(*names: str) -> str:
+    for name in names:
+        value = os.getenv(name, "").strip()
+        if value:
+            return value
+    return ""
 
 
 def load_env_file(path: Path = ENV_PATH) -> None:
