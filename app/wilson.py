@@ -2099,43 +2099,6 @@ def append_telegram_log(log_path: Path, payload: dict[str, Any]) -> None:
         handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
 
-def telegram_chat_ids() -> list[str]:
-    raw_values = [
-        os.getenv("TELEGRAM_CHAT_IDS", ""),
-        os.getenv("TELEGRAM_CHANNEL_ID", ""),
-        os.getenv("TELEGRAM_GROUP_ID", ""),
-    ]
-    chat_ids: list[str] = []
-    for raw in raw_values:
-        for value in raw.split(","):
-            value = value.strip()
-            if value and value not in chat_ids:
-                chat_ids.append(value)
-    return chat_ids
-
-
-def telegram_send_message(token: str, chat_id: str, text_value: str) -> None:
-    url = f"https://api.telegram.org/bot{token}/sendMessage"
-    payload = urllib.parse.urlencode({"chat_id": chat_id, "text": text_value, "parse_mode": "MarkdownV2", "disable_web_page_preview": "true"}).encode("utf-8")
-    request = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/x-www-form-urlencoded", "User-Agent": USER_AGENT})
-    with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
-        body = json.loads(response.read().decode("utf-8", "ignore"))
-        if not body.get("ok"):
-            raise RuntimeError(body)
-
-
-def telegram_send_photo(token: str, chat_id: str, image_path: Path, caption: str) -> None:
-    url = f"https://api.telegram.org/bot{token}/sendPhoto"
-    fields = {"chat_id": chat_id, "caption": caption}
-    files = {"photo": image_path}
-    data, content_type = multipart_form_data(fields, files)
-    request = urllib.request.Request(url, data=data, headers={"Content-Type": content_type, "User-Agent": USER_AGENT})
-    with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
-        body = json.loads(response.read().decode("utf-8", "ignore"))
-        if not body.get("ok"):
-            raise RuntimeError(body)
-
-
 def multipart_form_data(fields: dict[str, str], files: dict[str, Path]) -> tuple[bytes, str]:
     boundary = f"----WilsonBoundary{int(time.time() * 1000)}"
     chunks: list[bytes] = []

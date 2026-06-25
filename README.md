@@ -22,6 +22,12 @@ python3 -m app.fiona_runtime --send run-scheduler
 
 The runtime continuously checks whether a scheduled brief is due and writes runtime output under `reports/fiona/`.
 
+Scheduler polling interval priority:
+
+1. `WILSON_INTERVAL_MINUTES`
+2. `FIONA_RUNTIME_INTERVAL_MINUTES`
+3. runtime default
+
 ## Scheduled Briefs
 
 Current production tasks:
@@ -38,6 +44,12 @@ Timezone is controlled by `WILSON_TIMEZONE`.
 
 Telegram delivery uses `app/telegram_service.py`.
 
+Production sending path:
+
+```text
+Fiona Runtime -> telegram_service -> Telegram Bot API
+```
+
 Target priority:
 
 1. `TELEGRAM_GROUP_ID`
@@ -47,6 +59,12 @@ Target priority:
 Production recommendation: configure only `TELEGRAM_GROUP_ID` as the default Telegram target.
 
 `TELEGRAM_CHANNEL_ID` is kept only for backward compatibility and is not recommended as the default production target.
+
+Not recommended for production defaults:
+
+- `FIONA_SEND`
+- `FIONA_SEND_TELEGRAM`
+- `TELEGRAM_CHANNEL_ID`
 
 ## Recommended Railway Variables
 

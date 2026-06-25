@@ -196,7 +196,7 @@ def run_scheduler(
     interval_minutes: int | None = None,
     max_cycles: int | None = None,
 ) -> None:
-    interval = max(1, interval_minutes or int(first_runtime_env("FIONA_RUNTIME_INTERVAL_MINUTES", "FIONA_ALERT_INTERVAL_MINUTES") or "15"))
+    interval = scheduler_interval_minutes(interval_minutes)
     cycle = 0
     while True:
         cycle += 1
@@ -211,6 +211,13 @@ def run_scheduler(
         if max_cycles is not None and cycle >= max_cycles:
             return
         time_module.sleep(interval * 60)
+
+
+def scheduler_interval_minutes(interval_minutes: int | None = None) -> int:
+    if interval_minutes is not None:
+        return max(1, interval_minutes)
+    configured = first_runtime_env("WILSON_INTERVAL_MINUTES", "FIONA_RUNTIME_INTERVAL_MINUTES", "FIONA_ALERT_INTERVAL_MINUTES")
+    return max(1, int(configured or "15"))
 
 
 def build_brief(

@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from app.fiona_memory import FionaMemory
-from app.fiona_runtime import build_payload, due_brief_kinds, resolve_send, run_once, should_push_alerts, snapshot_to_events
+from app.fiona_runtime import build_payload, due_brief_kinds, resolve_send, run_once, scheduler_interval_minutes, should_push_alerts, snapshot_to_events
 from app.fiona_types import FionaEvent, PushDecision
 
 
@@ -64,6 +64,27 @@ class FionaPhase4Test(unittest.TestCase):
         self.assertEqual(due_brief_kinds(datetime(2026, 6, 24, 20, 36, tzinfo=timezone.utc))[0].value, "evening")
         self.assertEqual(due_brief_kinds(datetime(2026, 6, 24, 22, 30, tzinfo=timezone.utc))[0].value, "daily")
         self.assertEqual(due_brief_kinds(datetime(2026, 6, 24, 3, 0, tzinfo=timezone.utc)), [])
+
+    def test_scheduler_interval_env_priority(self) -> None:
+        env = __import__("os").environ
+        previous = {name: env.get(name) for name in ("WILSON_INTERVAL_MINUTES", "FIONA_RUNTIME_INTERVAL_MINUTES", "FIONA_ALERT_INTERVAL_MINUTES")}
+        try:
+            env["WILSON_INTERVAL_MINUTES"] = "240"
+            env["FIONA_RUNTIME_INTERVAL_MINUTES"] = "15"
+            self.assertEqual(scheduler_interval_minutes(), 240)
+
+            env.pop("WILSON_INTERVAL_MINUTES", None)
+            self.assertEqual(scheduler_interval_minutes(), 15)
+
+            env.pop("FIONA_RUNTIME_INTERVAL_MINUTES", None)
+            env.pop("FIONA_ALERT_INTERVAL_MINUTES", None)
+            self.assertEqual(scheduler_interval_minutes(), 15)
+        finally:
+            for name, value in previous.items():
+                if value is None:
+                    env.pop(name, None)
+                else:
+                    env[name] = value
 
     def test_snapshot_to_events_creates_core_market_events(self) -> None:
         events = snapshot_to_events(sample_snapshot(), NOW)
