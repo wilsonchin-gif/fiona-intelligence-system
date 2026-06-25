@@ -180,11 +180,13 @@ def should_push_alerts(brief: BriefSelector) -> bool:
 
 
 def alert_enabled() -> bool:
-    return os.getenv("FIONA_ALERT_ENABLED", "0").strip().lower() in {"1", "true", "yes", "on"}
+    value = first_runtime_env("FIONA_ALERT_ENABLED", "FIONAALERTENABLED") or "0"
+    return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def alert_dry_run() -> bool:
-    return os.getenv("FIONA_ALERT_DRY_RUN", "1").strip().lower() not in {"0", "false", "no", "off"}
+    value = first_runtime_env("FIONA_ALERT_DRY_RUN", "FIONAALERTDRYRUN") or "1"
+    return value.strip().lower() not in {"0", "false", "no", "off"}
 
 
 def run_scheduler(
