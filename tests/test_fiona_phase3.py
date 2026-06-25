@@ -148,55 +148,58 @@ class FionaPhase3Test(unittest.TestCase):
         morning = build_morning_brief(events, narratives, generated_at=NOW)
         evening = build_evening_brief(events, narratives, generated_at=NOW)
 
-        self.assertLessEqual(len(morning.body_text()), 300)
-        self.assertLessEqual(len(evening.body_text()), 300)
-        self.assertIn("昨夜市场", morning.body_text())
-        self.assertIn("今晚重点", evening.body_text())
+        self.assertLessEqual(len(morning.body_text()), 560)
+        self.assertLessEqual(len(evening.body_text()), 620)
+        self.assertIn("Overnight Market", morning.body_text())
+        self.assertIn("Today’s Key Events", morning.body_text())
+        self.assertIn("Tonight’s Focus", evening.body_text())
+        self.assertIn("What Could Change Tonight", evening.body_text())
 
     def test_market_news_uses_snapshot_heatmap_and_narratives(self) -> None:
         events = sample_events()
         narratives = NarrativeEngine().build(events, now=NOW)
         text = build_market_news_brief(events, narratives, snapshot=sample_snapshot(), generated_at=NOW).render_text()
 
-        self.assertIn("Heat Map", text)
-        self.assertIn("US Market：62/100", text)
+        self.assertIn("Market Heat Map", text)
+        self.assertIn("US Market：62/100｜Neutral", text)
         self.assertIn("Current Narrative", text)
-        self.assertIn("Fiona's View", text)
+        self.assertIn("What Changed", text)
+        self.assertIn("Market Temperature", text)
+        self.assertIn("Fiona’s View", text)
 
     def test_daily_brief_contains_top_events_and_next_watch(self) -> None:
         events = sample_events()
         narratives = NarrativeEngine().build(events, now=NOW)
         text = build_daily_brief(events, narratives, snapshot=sample_snapshot(), generated_at=NOW).render_text()
 
-        self.assertIn("Hi, investors, I'm your assistant fiona", text)
-        self.assertIn("Important events", text)
-        self.assertIn("Future note", text)
-        self.assertIn("Crypto market", text)
-        self.assertIn("Stock market", text)
+        self.assertIn("Hi, investors, I'm your assistant Fiona.", text)
+        self.assertIn("Today’s Market Pulse", text)
+        self.assertIn("Important Events", text)
+        self.assertIn("Next Confirmation", text)
+        self.assertIn("Crypto Dashboard", text)
+        self.assertIn("Global Markets", text)
         self.assertIn("BTC ETF资金流边际走弱", text)
-        self.assertIn("wish you achieve your great ambition~", text)
+        self.assertIn("Wish you achieve your great ambition.", text)
 
     def test_daily_flow_section_has_complete_market_lines(self) -> None:
         events = sample_events()
         narratives = NarrativeEngine().build(events, now=NOW)
         text = build_daily_brief(events, narratives, snapshot=sample_snapshot(), generated_at=NOW).render_text()
 
-        self.assertIn("RWA：$62.33B，24h -1.10%", text)
-        self.assertIn("BTC：$1.25T，24h -1.60% 当前价格 $62,400.00，24h -1.60%", text)
-        self.assertIn("BNB：$77.80B，24h -0.70% 当前价格 数据暂未返回，24h -0.70%", text)
-        self.assertIn("SOL：$68.50B，24h +1.20% 当前价格 数据暂未返回，24h +1.20%", text)
-        self.assertIn("HYPE：$12.30B，24h -3.40% 当前价格 数据暂未返回，24h -3.40%", text)
-        self.assertIn("UNI：$4.50B，24h +0.80% 当前价格 $5.20，24h +0.80%", text)
+        self.assertIn("Stablecoin：$313.87B / 24h +0.05%", text)
+        self.assertIn("BTC：$62,400.00 / 市值 $1.25T / 24h -1.60%", text)
+        self.assertIn("UNI：$5.20 / 市值 $4.50B / 24h +0.80%", text)
+        self.assertIn("部分数据暂缺，等待下一轮更新。", text)
         self.assertIn("DJI：38,834.86，24h +0.74%", text)
         self.assertIn("SPX：5,450.21，24h +0.30%", text)
         self.assertIn("HSI：23,890.12，24h +0.50%", text)
-        self.assertIn("000001：4,110.81，24h +0.11%", text)
+        self.assertIn("SSE / 000001：4,110.81，24h +0.11%", text)
         self.assertIn("GOLD：2,450.50，24h +1.20%", text)
         self.assertIn("SILVER：31.20，24h -0.40%", text)
         self.assertIn("USOIL：79.50，24h +0.80%", text)
         self.assertIn("UKOIL：83.40，24h +0.90%", text)
-        self.assertIn("US 成交榜：AAPL +0.40%", text)
-        self.assertIn("CN 成交榜：600519 +1.10%", text)
+        self.assertIn("US Volume Leaders：AAPL +0.40%", text)
+        self.assertIn("CN Volume Leaders：600519 +1.10%", text)
         self.assertNotIn("$ B，24h  %", text)
 
     def test_weekly_brief_contains_false_narrative_watchlist(self) -> None:
@@ -205,7 +208,17 @@ class FionaPhase3Test(unittest.TestCase):
         text = build_weekly_brief(events, narratives, snapshot=sample_snapshot(), generated_at=NOW).render_text()
 
         self.assertIn("False Narrative Watchlist", text)
+        self.assertIn("Next Week Scenario", text)
         self.assertIn("短期Meme热点", text)
+
+    def test_briefs_filter_forbidden_terms(self) -> None:
+        events = sample_events()
+        events[0].what_happened = "测试买入卖出加仓减仓目标价必涨必跌"
+        narratives = NarrativeEngine().build(events, now=NOW)
+        text = build_daily_brief(events, narratives, snapshot=sample_snapshot(), generated_at=NOW).render_text()
+
+        for term in ("买入", "卖出", "加仓", "减仓", "梭哈", "抄底", "逃顶", "目标价", "必涨", "必跌"):
+            self.assertNotIn(term, text)
 
     def test_brief_builders_accept_event_generators(self) -> None:
         events = sample_events()
