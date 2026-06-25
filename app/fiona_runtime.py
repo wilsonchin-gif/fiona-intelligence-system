@@ -194,7 +194,7 @@ def build_brief(
     raise ValueError(f"Unsupported Fiona brief kind: {kind}")
 
 
-def due_brief_kinds(now: datetime, tolerance_minutes: int = 5) -> list[FionaBriefKind]:
+def due_brief_kinds(now: datetime, tolerance_minutes: int = 15) -> list[FionaBriefKind]:
     current = now if now.tzinfo else now.replace(tzinfo=timezone.utc)
     due: list[FionaBriefKind] = []
     for kind, schedule in BRIEF_SCHEDULES.items():

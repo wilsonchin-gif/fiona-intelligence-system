@@ -60,6 +60,7 @@ class FionaPhase4Test(unittest.TestCase):
         self.assertIn("weekly", [item.value for item in due_brief_kinds(NOW)])
         self.assertEqual(due_brief_kinds(datetime(2026, 6, 24, 7, 30, tzinfo=timezone.utc))[0].value, "morning")
         self.assertEqual(due_brief_kinds(datetime(2026, 6, 24, 20, 30, tzinfo=timezone.utc))[0].value, "evening")
+        self.assertEqual(due_brief_kinds(datetime(2026, 6, 24, 20, 36, tzinfo=timezone.utc))[0].value, "evening")
         self.assertEqual(due_brief_kinds(datetime(2026, 6, 24, 22, 30, tzinfo=timezone.utc))[0].value, "daily")
         self.assertEqual(due_brief_kinds(datetime(2026, 6, 24, 3, 0, tzinfo=timezone.utc)), [])
 
