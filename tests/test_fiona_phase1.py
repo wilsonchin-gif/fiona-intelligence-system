@@ -71,10 +71,10 @@ class FionaPhase1Test(unittest.TestCase):
         self.assertGreater(macro.intelligence_score, price.intelligence_score)
         self.assertGreaterEqual(macro.intelligence_score, 90)
 
-    def test_btc_price_hard_trigger_is_s_level_and_send_now(self) -> None:
+    def test_btc_price_hard_trigger_is_a_level_and_send_now(self) -> None:
         processed = FionaAlertEngine().process(event())
 
-        self.assertEqual(processed.level.value, "S")
+        self.assertEqual(processed.level.value, "A")
         self.assertEqual(processed.lifecycle_status, LifecycleStatus.NEW)
         self.assertEqual(processed.push_decision, PushDecision.SEND_NOW)
         self.assertGreaterEqual(processed.conviction_score, 80)

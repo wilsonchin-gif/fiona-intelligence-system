@@ -30,7 +30,7 @@ class LifecycleManager:
 
         cooling = self.in_cooldown(event, previous, current_time)
         event.push_decision = decide_push(event, cooling=cooling, upgraded=upgraded)
-        if event.lifecycle_status == LifecycleStatus.RESOLVED and previous.last_level == AlertLevel.S:
+        if event.lifecycle_status == LifecycleStatus.RESOLVED and previous.last_level in {AlertLevel.S, AlertLevel.A}:
             event.push_decision = PushDecision.SEND_NOW
         self.update_record(event, previous, current_time)
         return event

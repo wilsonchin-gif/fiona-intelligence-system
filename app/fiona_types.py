@@ -14,6 +14,7 @@ class EventCategory(str, Enum):
     RISK = "risk"
     RWA = "rwa"
     ONCHAIN = "onchain"
+    NARRATIVE = "narrative"
     REGULATION = "regulation"
     OTHER = "other"
 
@@ -28,6 +29,7 @@ class AlertLevel(str, Enum):
     S = "S"
     A = "A"
     B = "B"
+    C = "C"
 
 
 class LifecycleStatus(str, Enum):
@@ -40,6 +42,7 @@ class PushDecision(str, Enum):
     SEND_NOW = "send_now"
     BRIEF_POOL = "brief_pool"
     SUPPRESS_DUPLICATE = "suppress_duplicate"
+    IGNORE = "ignore"
 
 
 class NarrativeStatus(str, Enum):
