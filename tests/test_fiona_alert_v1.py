@@ -38,14 +38,16 @@ class FionaAlertV1Test(unittest.TestCase):
 
         for section in (
             "🚨 Fiona Alert",
-            "Category：",
+            "【事件】",
+            "【为什么重要】",
+            "【影响资产】",
+            "直接：",
+            "【Fiona 判断】",
+            "Direction：",
+            "Conviction：",
             "Importance：",
-            "Confidence：",
-            "What Happened",
-            "Why It Matters",
-            "Affected Assets",
-            "What To Watch",
-            "Fiona’s View",
+            "【接下来确认】",
+            "【Fiona’s View】",
             "Disclaimer：",
         ):
             self.assertIn(section, text)

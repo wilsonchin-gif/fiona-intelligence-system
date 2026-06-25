@@ -108,47 +108,31 @@ def is_a_level_hard_trigger(event: FionaEvent) -> bool:
 
 
 def render_alert(event: FionaEvent) -> str:
-    assets = "\n".join(event.affected_assets) or "Market"
-    watch_next = "\n".join(f"• {item}" for item in event.watch_next[:3]) or "• 等待下一轮信号确认"
+    watch_next = "\n".join(f"• 等待：{normalize_watch_point(item)}" for item in event.watch_next[:3]) or "• 等待：下一轮信号确认"
     return sanitize_alert_text("\n".join(
         [
-            "🚨 Fiona Alert",
+            f"🚨 Fiona Alert｜{event.level.value}级",
             "",
-            "Category：",
-            category_label(event),
+            "【事件】",
+            event.what_happened or event.title,
             "",
-            "Importance：",
-            f"{event.intelligence_score} / 100",
-            "",
-            "Confidence：",
-            f"{event.conviction_score}%",
-            "",
-            "━━━━━━━━━━━━━━",
-            "",
-            "What Happened",
-            event.what_happened,
-            "",
-            "━━━━━━━━━━━━━━",
-            "",
-            "Why It Matters",
+            "【为什么重要】",
             event.why_important,
             "",
-            "━━━━━━━━━━━━━━",
+            "【影响资产】",
+            format_affected_assets(event),
             "",
-            "Affected Assets",
-            assets,
+            "【Fiona 判断】",
+            f"Category：{category_label(event)}",
+            f"Direction：{event.market_direction.value}",
+            f"Conviction：{event.conviction_score}%",
+            f"Importance：{event.intelligence_score}/100",
             "",
-            "━━━━━━━━━━━━━━",
-            "",
-            "What To Watch",
+            "【接下来确认】",
             watch_next,
             "",
-            "━━━━━━━━━━━━━━",
-            "",
-            "Fiona’s View",
+            "【Fiona’s View】",
             event.fiona_view,
-            "",
-            "━━━━━━━━━━━━━━",
             "",
             "Disclaimer：",
             "This content is for informational purposes only and does not constitute investment advice.",
@@ -158,6 +142,64 @@ def render_alert(event: FionaEvent) -> str:
 
 def category_label(event: FionaEvent) -> str:
     return ALERT_CATEGORY_LABELS.get(event.category, event.category.value.title())
+
+
+def format_affected_assets(event: FionaEvent) -> str:
+    assets = [asset.strip().upper() for asset in event.affected_assets if asset.strip()]
+    if not assets:
+        return "直接：Market\n传导：Risk Assets\n观察：资金流、波动率、成交量"
+
+    direct = assets[0]
+    transmission_assets = assets[1:4]
+    watch_assets = inferred_watch_assets(event, assets)
+
+    lines = [f"直接：{direct}"]
+    if transmission_assets:
+        lines.append(f"传导：{'、'.join(transmission_assets)}")
+    if watch_assets:
+        lines.append(f"观察：{'、'.join(watch_assets)}")
+    return "\n".join(lines)
+
+
+def inferred_watch_assets(event: FionaEvent, assets: list[str]) -> list[str]:
+    if event.category == EventCategory.PRICE:
+        if "BTC" in assets or "ETH" in assets or "SOL" in assets:
+            return unique_assets(["ETF Flow", "Stablecoin", "Liquidation"], assets)
+        if "SPX" in assets or "QQQ" in assets:
+            return unique_assets(["DXY", "US10Y", "VIX"], assets)
+        return unique_assets(["Volume", "Sector Beta", "Risk Appetite"], assets)
+    if event.category == EventCategory.ETF:
+        return unique_assets(["BTC", "ETH", "Stablecoin", "Crypto Beta"], assets)
+    if event.category in {EventCategory.MACRO, EventCategory.REGULATION}:
+        return unique_assets(["DXY", "US10Y", "SPX", "QQQ", "BTC"], assets)
+    if event.category == EventCategory.INSTITUTION:
+        return unique_assets(["ETF Flow", "RWA TVL", "Related Tokens"], assets)
+    if event.category == EventCategory.RISK:
+        return unique_assets(["Liquidation", "Stablecoin", "Exchange Flow"], assets)
+    if event.category == EventCategory.ONCHAIN:
+        return unique_assets(["Exchange Flow", "Stablecoin", "DEX Volume"], assets)
+    if event.category in {EventCategory.NARRATIVE, EventCategory.RWA, EventCategory.OTHER}:
+        return unique_assets(["Narrative Strength", "Capital Flow", "Persistence"], assets)
+    return []
+
+
+def unique_assets(candidates: list[str], existing: list[str]) -> list[str]:
+    existing_upper = {item.upper() for item in existing}
+    result: list[str] = []
+    for item in candidates:
+        if item.upper() not in existing_upper and item not in result:
+            result.append(item)
+    return result[:3]
+
+
+def normalize_watch_point(point: str) -> str:
+    text = point.strip()
+    if not text:
+        return "下一轮信号确认"
+    for prefix in ("等待：", "等待:", "关注：", "关注:", "观察：", "观察:"):
+        if text.startswith(prefix):
+            return text[len(prefix):].strip() or "下一轮信号确认"
+    return text
 
 
 def cooldown_minutes_for(event: FionaEvent) -> int:
