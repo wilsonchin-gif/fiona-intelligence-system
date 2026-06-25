@@ -635,7 +635,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def resolve_send(send_flag: bool) -> bool:
-    for env_name in ("FIONA_SEND", "FIONA_SEND_TELEGRAM", "WILSON_SEND"):
+    for env_name in ("WILSON_SEND", "FIONA_SEND", "FIONA_SEND_TELEGRAM"):
         env_value = os.getenv(env_name)
         if env_value is not None and env_value.strip() != "":
             return env_value.strip() == "1"

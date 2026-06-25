@@ -158,7 +158,7 @@ class FionaPhase4Test(unittest.TestCase):
         env = __import__("os").environ
         previous = {name: env.get(name) for name in ("FIONA_SEND", "FIONA_SEND_TELEGRAM", "WILSON_SEND")}
         try:
-            env.pop("FIONA_SEND", None)
+            env["FIONA_SEND"] = "0"
             env.pop("FIONA_SEND_TELEGRAM", None)
             env["WILSON_SEND"] = "1"
             self.assertTrue(resolve_send(False))

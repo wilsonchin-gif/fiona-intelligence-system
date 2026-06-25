@@ -1,126 +1,138 @@
-# 每日金融情报台
+# Fiona Intelligence System
 
-这个项目会每 4 小时抓取美国股市、中国股市、加密货币三类市场资讯，按影响力排序，并生成报表。
+Fiona is a market intelligence assistant for GitHub + Railway + Telegram production deployment.
 
-## Wilson's Market News MVP
+Fiona focuses on:
 
-新增的 Wilson MVP 会自动抓取美股、中国市场、Crypto、RWA 数据，生成：
+- fewer pushes
+- higher signal
+- market context
+- narrative tracking
+- risk observation
 
-- Telegram Markdown: `reports/wilson/latest/telegram.md`
-- 竖版长图 PNG: `reports/wilson/latest/infographic.png`
-- 原始快照 JSON: `reports/wilson/latest/snapshot.json`
+Fiona does not provide investment advice, price targets, or trading instructions.
 
-手动生成一次：
+## Production Runtime
 
-```bash
-python3 -m app.wilson run-once
-```
-
-生成并推送到 Telegram：
+Railway starts Fiona with:
 
 ```bash
-python3 -m app.wilson --send run-once
+python3 -m app.fiona_runtime --send run-scheduler
 ```
 
-Telegram 配置：
+The runtime continuously checks whether a scheduled brief is due and writes runtime output under `reports/fiona/`.
+
+## Scheduled Briefs
+
+Current production tasks:
+
+- `00:00` Fiona Market News
+- `07:30` Fiona Morning
+- `20:30` Fiona Evening
+- `22:30` Fiona Daily
+- Sunday `21:00` Fiona Weekly
+
+Timezone is controlled by `WILSON_TIMEZONE`.
+
+## Telegram
+
+Telegram delivery uses `app/telegram_service.py`.
+
+Target priority:
+
+1. `TELEGRAM_GROUP_ID`
+2. `TELEGRAM_CHAT_ID`
+3. `TELEGRAM_CHANNEL_ID`
+
+Production recommendation: configure only `TELEGRAM_GROUP_ID` as the default Telegram target.
+
+`TELEGRAM_CHANNEL_ID` is kept only for backward compatibility and is not recommended as the default production target.
+
+## Recommended Railway Variables
+
+```env
+TELEGRAM_BOT_TOKEN=your_bot_token
+TELEGRAM_GROUP_ID=your_group_id
+WILSON_SEND=1
+WILSON_TIMEZONE=Asia/Manila
+WILSON_INTERVAL_MINUTES=240
+FIONA_ALERT_ENABLED=0
+FIONA_ALERT_DRY_RUN=1
+```
+
+Send switch priority:
+
+1. `WILSON_SEND`
+2. `FIONA_SEND`
+3. `FIONA_SEND_TELEGRAM`
+
+If `WILSON_SEND` exists, it is the production source of truth.
+
+## Alert Engine
+
+Fiona Alert Engine code exists in the project, but production real-time alerts are disabled by default.
+
+Use:
+
+```env
+FIONA_ALERT_ENABLED=0
+FIONA_ALERT_DRY_RUN=1
+```
+
+Only enable real-time alerts after production validation:
+
+```env
+FIONA_ALERT_ENABLED=1
+FIONA_ALERT_DRY_RUN=0
+```
+
+## Local Dry Run
+
+Generate a brief without sending Telegram:
 
 ```bash
-cp config/wilson.env.example config/wilson.env
+WILSON_SEND=0 python3 -m app.fiona_runtime --brief daily --send run-once
 ```
 
-然后编辑 `config/wilson.env`，填入：
-
-- `TELEGRAM_BOT_TOKEN`
-- `TELEGRAM_CHANNEL_ID`
-- `TELEGRAM_GROUP_ID`
-
-内测默认只生成不推送。确认可推送后，把 `config/wilson.env` 里的 `WILSON_SEND=1` 打开。
-
-本地常驻每 4 小时运行：
+Generate a specific brief:
 
 ```bash
-chmod +x scripts/run_wilson_4h.sh
-scripts/run_wilson_4h.sh
+WILSON_SEND=0 python3 -m app.fiona_runtime --brief morning --send run-once
+WILSON_SEND=0 python3 -m app.fiona_runtime --brief evening --send run-once
+WILSON_SEND=0 python3 -m app.fiona_runtime --brief market-news --send run-once
+WILSON_SEND=0 python3 -m app.fiona_runtime --brief weekly --send run-once
 ```
 
-macOS 后台定时运行，按本机时间 00:00 / 04:00 / 08:00 / 12:00 / 16:00 / 20:00 执行：
+## Tests
+
+Run all unit tests:
 
 ```bash
-chmod +x scripts/run_wilson_once.sh
-cp scripts/launchd/com.local.wilson-market-news.plist ~/Library/LaunchAgents/
-launchctl load ~/Library/LaunchAgents/com.local.wilson-market-news.plist
+python3 -m unittest discover -s tests
 ```
 
-如需只生成不推送，在 `config/wilson.env` 设置 `WILSON_SEND=0`。
+## Files
 
-## 最简单用法
+- `app/`: Fiona runtime, content engine, scoring, memory, Telegram service, and current snapshot builder.
+- `config/`: source configuration and environment examples.
+- `docs/`: phase notes and design documents.
+- `scripts/`: local helper scripts.
+- `tests/`: unit tests.
+- `railway.toml`: Railway production start command.
+- `requirements.txt`: Python dependency marker for Railway.
+- `runtime.txt`: Python runtime version.
 
-桌面文件夹：`~/Desktop/每日金融情报报表`
+## Security
 
-每 4 小时会自动生成：
+Never commit secrets.
 
-- 中文 PDF
-- English PDF
-- 中文 Excel
-- English Excel
-- VP 阅读版 HTML/PDF 预览
+Ignored runtime and secret files include:
 
-手动立即生成一次：
+- `.env`
+- `config/*.env`
+- `reports/`
+- `tmp/`
+- `node_modules/`
+- `*.log`
 
-```bash
-scripts/run_desktop_hourly.sh
-```
-
-## 快速运行
-
-```bash
-python3 -m app.main run-once
-python3 -m app.main serve --port 8765
-```
-
-打开 `http://127.0.0.1:8765/` 查看最新报表。
-
-## 每 4 小时自动生成
-
-```bash
-python3 -m app.main watch --interval-minutes 240
-```
-
-macOS 后台运行可以使用项目内的 `launchd` 模板：
-
-```bash
-chmod +x scripts/run_hourly.sh
-cp scripts/launchd/com.local.financial-daily.plist ~/Library/LaunchAgents/
-launchctl load ~/Library/LaunchAgents/com.local.financial-daily.plist
-```
-
-输出文件：
-
-- `reports/latest/us_equities.html`
-- `reports/latest/china_equities.html`
-- `reports/latest/crypto.html`
-- `reports/archive/YYYY-MM-DD/HH00/*.html`
-
-## 数据源配置
-
-编辑 `config/sources.json` 可以添加、删除或调整数据源权重。推荐把 TechFlow、PANews、Odaily、今十数据等来源的授权 RSS、开放 API 或 RSSHub 源接入到对应市场。
-
-字段说明：
-
-- `market`: `us_equities`、`china_equities`、`crypto`
-- `kind`: 当前支持 `rss` 和简单 `json`
-- `weight`: 来源权重，越权威越高
-- `enabled`: 设置为 `false` 可临时关闭
-
-## 排序逻辑
-
-系统综合以下信号打分：
-
-- 消息新鲜度
-- 来源权重
-- 多来源重复/共振
-- 宏观、政策、监管、流动性、龙头公司、交易所安全等关键词
-- 高冲击词，如突发、批准、调查、禁令、大跌、黑客、清算
-- 大额金额或大幅百分比
-
-报表中的观点是规则化点评，不构成投资建议。
+Disclaimer: 本内容仅供参考，不构成任何投资建议。投资有风险，入市需谨慎。
