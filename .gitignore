@@ -59,6 +59,9 @@ scripts/launchd/*.plist
 *.html
 *.svg
 
+# Fiona documentation assets that must stay versioned
+!docs/ui/screenshots/**/*.png
+
 # Keep source-controlled examples and docs explicit if needed
 !README.md
 !docs/**/*.md

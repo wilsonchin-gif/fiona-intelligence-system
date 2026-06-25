@@ -129,6 +129,30 @@ Run all unit tests:
 python3 -m unittest discover -s tests
 ```
 
+## Documentation System
+
+Fiona follows:
+
+```text
+Code First, Documentation Always.
+```
+
+Every development cycle must run Documentation Sync before commit:
+
+- update `docs/changelog/CHANGELOG.md`
+- update `docs/roadmap/roadmap.md`
+- update related PRD files under `docs/prd/`
+- update architecture / deployment / decision log when relevant
+- update UI docs and screenshots when Telegram or image layout changes
+- generate release notes under `docs/releases/`
+- export `.docx` files to `docs/export/` when document tooling is available
+
+Documentation entry:
+
+```text
+docs/README.md
+```
+
 ## Files
 
 - `app/`: Fiona runtime, content engine, scoring, memory, Telegram service, and current snapshot builder.
