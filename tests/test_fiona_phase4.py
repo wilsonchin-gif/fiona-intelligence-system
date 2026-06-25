@@ -118,9 +118,28 @@ class FionaPhase4Test(unittest.TestCase):
         self.assertTrue(memory.decision_memory)
 
     def test_alert_push_guard(self) -> None:
-        self.assertFalse(should_push_alerts("auto"))
-        self.assertTrue(should_push_alerts("alert"))
-        self.assertFalse(should_push_alerts("daily"))
+        env = __import__("os").environ
+        previous_enabled = env.get("FIONA_ALERT_ENABLED")
+        previous_dry_run = env.get("FIONA_ALERT_DRY_RUN")
+        try:
+            env.pop("FIONA_ALERT_ENABLED", None)
+            env.pop("FIONA_ALERT_DRY_RUN", None)
+            self.assertFalse(should_push_alerts("alert"))
+            env["FIONA_ALERT_ENABLED"] = "1"
+            env["FIONA_ALERT_DRY_RUN"] = "1"
+            self.assertFalse(should_push_alerts("alert"))
+            env["FIONA_ALERT_DRY_RUN"] = "0"
+            self.assertTrue(should_push_alerts("alert"))
+            self.assertTrue(should_push_alerts("daily"))
+        finally:
+            if previous_enabled is None:
+                env.pop("FIONA_ALERT_ENABLED", None)
+            else:
+                env["FIONA_ALERT_ENABLED"] = previous_enabled
+            if previous_dry_run is None:
+                env.pop("FIONA_ALERT_DRY_RUN", None)
+            else:
+                env["FIONA_ALERT_DRY_RUN"] = previous_dry_run
 
     def test_fiona_send_zero_overrides_send_flag(self) -> None:
         previous = __import__("os").environ.get("FIONA_SEND")

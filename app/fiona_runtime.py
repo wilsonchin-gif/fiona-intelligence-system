@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import time as time_module
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, time, timedelta, timezone
@@ -92,7 +93,7 @@ def run_once(
         "telegram_log_path": str(log_path),
         "send": send,
         "database_url_configured": bool(os.getenv("DATABASE_URL", "").strip()),
-        "alerts": {"count": 0, "pushed": []},
+        "alerts": {"enabled": alert_enabled(), "dry_run": alert_dry_run(), "count": 0, "pushed": []},
         "scheduled_briefs": [],
         "errors": [],
         "fallback": None,
@@ -171,7 +172,43 @@ def build_selected_brief(
 
 
 def should_push_alerts(brief: BriefSelector) -> bool:
-    return str(brief).strip().lower().replace("-", "_") == "alert"
+    if not alert_enabled():
+        return False
+    if alert_dry_run():
+        return False
+    return bool(str(brief).strip().lower().replace("-", "_") == "alert" or alert_enabled())
+
+
+def alert_enabled() -> bool:
+    return os.getenv("FIONA_ALERT_ENABLED", "0").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def alert_dry_run() -> bool:
+    return os.getenv("FIONA_ALERT_DRY_RUN", "1").strip().lower() not in {"0", "false", "no", "off"}
+
+
+def run_scheduler(
+    output_dir: Path = DEFAULT_OUTPUT,
+    send: bool = False,
+    timezone_name: str = DEFAULT_TIMEZONE,
+    interval_minutes: int | None = None,
+    max_cycles: int | None = None,
+) -> None:
+    interval = max(1, interval_minutes or int(first_runtime_env("FIONA_RUNTIME_INTERVAL_MINUTES", "FIONA_ALERT_INTERVAL_MINUTES") or "15"))
+    cycle = 0
+    while True:
+        cycle += 1
+        status = run_once(
+            output_dir=output_dir,
+            brief="auto",
+            send=send,
+            timezone_name=timezone_name,
+            fallback_to_wilson=True,
+        )
+        print(json.dumps({"scheduler_cycle": cycle, **status}, ensure_ascii=False, indent=2), flush=True)
+        if max_cycles is not None and cycle >= max_cycles:
+            return
+        time_module.sleep(interval * 60)
 
 
 def build_brief(
@@ -587,8 +624,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--brief", default=os.getenv("FIONA_BRIEF", "auto"), help="auto, alert, morning, evening, market-news, daily, weekly")
     parser.add_argument("--send", action="store_true", help="Push generated Fiona text to Telegram")
     parser.add_argument("--no-fallback", action="store_true", help="Disable Wilson text fallback if Fiona generation fails")
+    parser.add_argument("--interval-minutes", type=int, default=None, help="Scheduler polling interval")
+    parser.add_argument("--max-cycles", type=int, default=None, help="Testing only: stop scheduler after N cycles")
     subparsers = parser.add_subparsers(dest="command", required=True)
     subparsers.add_parser("run-once", help="Generate one Fiona cycle")
+    subparsers.add_parser("run-scheduler", help="Run Fiona continuously for Railway production")
     return parser.parse_args()
 
 
@@ -611,6 +651,15 @@ def first_runtime_env(*names: str) -> str:
 def main() -> None:
     args = parse_args()
     send = resolve_send(args.send)
+    if args.command == "run-scheduler":
+        run_scheduler(
+            output_dir=args.output.expanduser(),
+            send=send,
+            timezone_name=args.timezone,
+            interval_minutes=args.interval_minutes,
+            max_cycles=args.max_cycles,
+        )
+        return
     status = run_once(
         output_dir=args.output.expanduser(),
         brief=args.brief,

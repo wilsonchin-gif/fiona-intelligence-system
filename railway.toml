@@ -2,5 +2,5 @@
 builder = "NIXPACKS"
 
 [deploy]
-startCommand = "python3 -m app.fiona_runtime --brief daily run-once"
-restartPolicyType = "NEVER"
+startCommand = "python3 -m app.fiona_runtime --send run-scheduler"
+restartPolicyType = "ON_FAILURE"
