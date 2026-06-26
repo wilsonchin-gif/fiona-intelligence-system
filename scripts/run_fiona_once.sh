@@ -15,7 +15,7 @@ fi
 
 TIMEZONE="${FIONA_TIMEZONE:-Asia/Manila}"
 BRIEF="${FIONA_BRIEF:-auto}"
-OUTPUT="${FIONA_OUTPUT_DIR:-$HOME/WilsonMarketNewsRuntime/FionaReports}"
+OUTPUT="${FIONA_OUTPUT_DIR:-$HOME/Documents/Wilson AI Lab/Fiona Intelligence Platform/04_Data/Reports/FionaReports}"
 
 if [[ "${FIONA_SEND:-0}" == "1" ]]; then
   exec python3 -m app.fiona_runtime --timezone "$TIMEZONE" --output "$OUTPUT" --brief "$BRIEF" --send run-once

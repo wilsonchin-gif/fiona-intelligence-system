@@ -15,6 +15,20 @@
 - 日志是否有 error。
 - Alert 是否按环境变量关闭或 dry-run。
 
+## 1.1 本地 Workspace 检查
+
+当前本地 Workspace：
+
+```text
+~/Documents/Wilson AI Lab/Fiona Intelligence Platform/
+```
+
+开发仓库：
+
+```text
+03_Development/fiona-intelligence-system/
+```
+
 ## 2. 回滚策略
 
 如果生产异常：

@@ -22,6 +22,26 @@ python3 -m app.fiona_runtime --send run-scheduler
 
 The runtime continuously checks whether a scheduled brief is due and writes runtime output under `reports/fiona/`.
 
+## Local Workspace
+
+Wilson AI Lab is the long-term local workspace:
+
+```text
+~/Documents/Wilson AI Lab/
+```
+
+Fiona's local development repository lives at:
+
+```text
+~/Documents/Wilson AI Lab/Fiona Intelligence Platform/03_Development/fiona-intelligence-system/
+```
+
+Local runtime data and historical reports live under:
+
+```text
+~/Documents/Wilson AI Lab/Fiona Intelligence Platform/04_Data/
+```
+
 Scheduler polling interval priority:
 
 1. `WILSON_INTERVAL_MINUTES`

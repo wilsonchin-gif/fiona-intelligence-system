@@ -15,8 +15,23 @@ flowchart LR
     Telegram["Telegram Group"]
 
     Local --> GitHub
-    GitHub --> Railway
-    Railway --> Telegram
+GitHub --> Railway
+Railway --> Telegram
+```
+
+## 1.1 本地 Workspace
+
+Fiona 本地开发仓库位置：
+
+```text
+~/Documents/Wilson AI Lab/Fiona Intelligence Platform/03_Development/fiona-intelligence-system/
+```
+
+本地数据、历史 reports 和旧 runtime 归档位置：
+
+```text
+~/Documents/Wilson AI Lab/Fiona Intelligence Platform/04_Data/
+~/Documents/Wilson AI Lab/Fiona Intelligence Platform/Archive/
 ```
 
 ## 2. Railway

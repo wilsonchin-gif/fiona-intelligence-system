@@ -5,6 +5,39 @@
 负责人：Wilson  
 更新时间：2026-06-26
 
+## V1.0.1 - Workspace V2 Migration
+
+发布日期：2026-06-26  
+Commit：待本次 Workspace Migration 提交后由 Git 历史确认  
+影响范围：Local Workspace / Documentation / Development Path
+
+### 新增功能
+
+- 建立 `~/Documents/Wilson AI Lab/` 作为长期本地工作空间。
+- 将 Fiona Git 仓库迁移到 `Fiona Intelligence Platform/03_Development/fiona-intelligence-system/`。
+- 建立 Workspace 管理规范、项目模板、迁移计划和迁移报告。
+
+### 修复内容
+
+- 修复本地 Fiona helper 默认输出路径，避免继续写入旧 `~/WilsonMarketNewsRuntime`。
+- 更新旧 phase 文档中的本地 runtime 路径。
+
+### 优化内容
+
+- 旧 runtime、历史 reports、logs、env、launchd 模板迁入 Wilson AI Lab 分类目录。
+- Desktop 不再保留 Fiona 项目目录。
+
+### 删除内容
+
+- 未删除任何生产代码。
+- 未删除任何历史资料。
+
+### 影响范围
+
+- Railway 云端生产不受影响。
+- Telegram 配置不变。
+- 本地开发路径已迁移。
+
 ## V1.0.0 - Production Foundation
 
 发布日期：2026-06-26  

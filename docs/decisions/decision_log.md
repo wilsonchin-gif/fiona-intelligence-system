@@ -75,3 +75,32 @@ Alternatives：
 
 - 只维护 README。
 - 文档放在外部工具，不进入 Git。
+
+## Decision 004 - Wilson AI Lab 成为唯一长期 Workspace
+
+日期：2026-06-26  
+状态：Accepted
+
+Decision：
+
+以后所有 AI 项目、Fiona 代码、文档、Prompt、Research、Deployment、Reports 和 Archive 统一进入：
+
+```text
+~/Documents/Wilson AI Lab/
+```
+
+Why：
+
+桌面项目散落会增加路径风险、重复文件、迁移成本和交接成本。Wilson AI Lab 作为长期空间，可以同时服务 Fiona、Bazi Mini Program、AI Agents 和未来项目。
+
+Impact：
+
+- Fiona 本地仓库迁移到 `Fiona Intelligence Platform/03_Development/`。
+- 运行数据迁移到 `04_Data/`。
+- 旧 runtime 和不确定文件进入 Archive。
+- 任何新项目自动建立 README、docs、src、assets、release、archive。
+
+Alternatives：
+
+- 继续使用 Desktop 作为项目目录。
+- 每个项目各自散落在不同目录。

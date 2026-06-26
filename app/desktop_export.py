@@ -20,7 +20,7 @@ from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, Tabl
 from app.main import DEFAULT_CONFIG, DEFAULT_OUTPUT, run_once
 
 ROOT = Path(__file__).resolve().parent.parent
-DESKTOP_REPORT_DIR = Path.home() / "Desktop" / "每日金融情报报表"
+DESKTOP_REPORT_DIR = Path.home() / "Documents" / "Wilson AI Lab" / "Fiona Intelligence Platform" / "06_Documents" / "Legacy Financial Reports"
 BUNDLED_NODE = Path("/Users/mac/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node")
 EXCEL_BUILDER = ROOT / "tools" / "build_desktop_excel.mjs"
 PDF_FONT_NAME = "FinancialDailySans"

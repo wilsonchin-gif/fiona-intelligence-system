@@ -45,7 +45,7 @@ python3 -m app.fiona_runtime --brief alert --send run-once
 
 ```text
 FIONA_TIMEZONE=Asia/Manila
-FIONA_OUTPUT_DIR="$HOME/WilsonMarketNewsRuntime/FionaReports"
+FIONA_OUTPUT_DIR="$HOME/Documents/Wilson AI Lab/Fiona Intelligence Platform/04_Data/Reports/FionaReports"
 FIONA_BRIEF=auto
 FIONA_SEND=0
 ```

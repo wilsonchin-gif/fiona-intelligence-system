@@ -7,7 +7,7 @@ Phase 5 installs Fiona as an independent local launchd job for internal testing.
 - Label: `com.local.fiona-intelligence`
 - Plist: `scripts/launchd/com.local.fiona-intelligence.plist`
 - Installed path: `~/Library/LaunchAgents/com.local.fiona-intelligence.plist`
-- Runtime script: `/Users/mac/WilsonMarketNewsRuntime/scripts/run_fiona_once.sh`
+- Runtime script: `/Users/mac/Documents/Wilson AI Lab/Fiona Intelligence Platform/03_Development/fiona-intelligence-system/scripts/run_fiona_once.sh`
 
 ## Internal Test Mode
 
@@ -33,7 +33,7 @@ Times are local UTC+8.
 ## Output
 
 ```text
-/Users/mac/WilsonMarketNewsRuntime/FionaReports
+/Users/mac/Documents/Wilson AI Lab/Fiona Intelligence Platform/04_Data/Reports/FionaReports
 ```
 
 Latest files:
@@ -46,9 +46,9 @@ Latest files:
 
 Logs:
 
-- `/Users/mac/WilsonMarketNewsRuntime/reports/fiona/fiona.out.log`
-- `/Users/mac/WilsonMarketNewsRuntime/reports/fiona/fiona.err.log`
-- `/Users/mac/WilsonMarketNewsRuntime/FionaReports/fiona_telegram_push.log`
+- `/Users/mac/Documents/Wilson AI Lab/Fiona Intelligence Platform/05_Deployment/Logs/legacy-runtime/reports/fiona/fiona.out.log`
+- `/Users/mac/Documents/Wilson AI Lab/Fiona Intelligence Platform/05_Deployment/Logs/legacy-runtime/reports/fiona/fiona.err.log`
+- `/Users/mac/Documents/Wilson AI Lab/Fiona Intelligence Platform/04_Data/Reports/FionaReports/fiona_telegram_push.log`
 
 ## Current Production Status
 

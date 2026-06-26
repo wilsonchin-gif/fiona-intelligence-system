@@ -11,9 +11,9 @@ Fiona 是 AI Market Intelligence Product。她不是新闻机器人，而是 Mar
 
 ## 当前版本
 
-当前生产版本：V1.0.0 Production Foundation
+当前生产版本：V1.0.1 Workspace V2
 
-完成度：80%
+完成度：85%
 
 已完成：
 
@@ -24,6 +24,8 @@ Fiona 是 AI Market Intelligence Product。她不是新闻机器人，而是 Mar
 - Telegram 发送链路统一为 `telegram_service`。
 - Production 配置命名初步统一。
 - Documentation System 初始化。
+- Wilson AI Lab Workspace V2 初始化。
+- Fiona 本地仓库迁移到统一 Workspace。
 
 ## 当前优先级
 
@@ -32,6 +34,7 @@ P0：
 - 生产稳定性。
 - Telegram 文本内容质量。
 - 日志和配置可维护性。
+- Workspace 统一管理。
 
 P1：
 
