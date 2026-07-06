@@ -71,6 +71,7 @@ class FionaPhase4Test(unittest.TestCase):
         try:
             env["WILSON_INTERVAL_MINUTES"] = "240"
             env["FIONA_RUNTIME_INTERVAL_MINUTES"] = "15"
+            env["FIONA_ALERT_INTERVAL_MINUTES"] = "1"
             self.assertEqual(scheduler_interval_minutes(), 240)
 
             env.pop("WILSON_INTERVAL_MINUTES", None)
@@ -78,7 +79,7 @@ class FionaPhase4Test(unittest.TestCase):
 
             env.pop("FIONA_RUNTIME_INTERVAL_MINUTES", None)
             env.pop("FIONA_ALERT_INTERVAL_MINUTES", None)
-            self.assertEqual(scheduler_interval_minutes(), 15)
+            self.assertEqual(scheduler_interval_minutes(), 5)
         finally:
             for name, value in previous.items():
                 if value is None:

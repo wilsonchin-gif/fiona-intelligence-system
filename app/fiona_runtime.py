@@ -25,6 +25,27 @@ from app.fiona_engine import FionaAlertEngine
 from app.fiona_lifecycle import LifecycleManager
 from app.fiona_memory import DecisionMemoryRecord, FionaMemory
 from app.fiona_narrative import NarrativeEngine
+from app.fiona_scheduler import (
+    ACTION_DEFER,
+    ACTION_SEND,
+    ACTION_SUPPRESS,
+    STATUS_DEFERRED_COLLISION,
+    STATUS_PARTIAL_DELIVERY,
+    STATUS_SKIPPED_EXPIRED,
+    STATUS_SUPPRESSED_COLLISION,
+    STATUS_UNKNOWN_DELIVERY_STATE,
+    UNCERTAIN_DELIVERY_LOG_NAME,
+    SchedulerLedger,
+    ScheduledOccurrence,
+    arbitrate_occurrences,
+    can_execute_occurrence,
+    delivery_error_summary,
+    delivery_status,
+    due_occurrences,
+    remember_uncertain_occurrence,
+    scheduler_interval_minutes as scheduler_interval_minutes_v2,
+    write_uncertain_delivery_journal,
+)
 from app.fiona_types import EventCategory, FionaEvent, MarketDirection, PushDecision
 from app.telegram_service import send_message as telegram_send_message
 from app.wilson import (
@@ -58,6 +79,7 @@ load_env_file()
 DEFAULT_OUTPUT = Path(os.getenv("FIONA_OUTPUT_DIR", str(ROOT / "reports" / "fiona"))).expanduser()
 TELEGRAM_LOG_NAME = "fiona_telegram_push.log"
 MEMORY_NAME = "fiona_memory.json"
+SCHEDULER_LEDGER_NAME = "fiona_scheduler_ledger.json"
 
 BriefSelector = Union[FionaBriefKind, str]
 
@@ -195,29 +217,214 @@ def run_scheduler(
     timezone_name: str = DEFAULT_TIMEZONE,
     interval_minutes: int | None = None,
     max_cycles: int | None = None,
+    cycle_runner: Callable[..., dict[str, Any]] | None = None,
+    sleep_fn: Callable[[float], None] = time_module.sleep,
 ) -> None:
     interval = scheduler_interval_minutes(interval_minutes)
     cycle = 0
     while True:
         cycle += 1
-        status = run_once(
+        try:
+            runner = cycle_runner or run_scheduler_cycle
+            status = runner(
+                output_dir=output_dir,
+                send=send,
+                timezone_name=timezone_name,
+                interval_minutes=interval,
+            )
+        except Exception as exc:  # noqa: BLE001 - production scheduler must survive one bad cycle.
+            status = {
+                "ok": False,
+                "scheduler_cycle_error": str(exc),
+                "send": send,
+                "timezone": timezone_name,
+                "interval_minutes": interval,
+            }
+        print(json.dumps({"scheduler_cycle": cycle, **status}, ensure_ascii=False, indent=2), flush=True)
+        if max_cycles is not None and cycle >= max_cycles:
+            return
+        sleep_seconds = interval * 60
+        if not status.get("ok", True):
+            sleep_seconds = min(60, sleep_seconds)
+        sleep_fn(sleep_seconds)
+
+
+def run_scheduler_cycle(
+    output_dir: Path = DEFAULT_OUTPUT,
+    send: bool = False,
+    timezone_name: str = DEFAULT_TIMEZONE,
+    interval_minutes: int | None = None,
+    now: datetime | None = None,
+    runner: Callable[..., dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    current = now or now_in_timezone(timezone_name)
+    ledger_path = output_dir / SCHEDULER_LEDGER_NAME
+    ledger = SchedulerLedger.load(ledger_path)
+    occurrences = due_occurrences(current, ledger.last_check_at, timezone_name)
+    occurrences.extend(ledger.deferred_occurrences(current))
+    arbitration_decisions = arbitrate_occurrences(occurrences, current)
+    status: dict[str, Any] = {
+        "ok": True,
+        "scheduler_now": current.isoformat(),
+        "timezone": timezone_name,
+        "send": send,
+        "interval_minutes": scheduler_interval_minutes(interval_minutes),
+        "ledger_path": str(ledger_path),
+        "ledger_load_error": ledger.load_error,
+        "due_occurrences": [occurrence.occurrence_id for occurrence in occurrences],
+        "arbitration": [
+            {
+                "occurrence_id": decision.occurrence.occurrence_id,
+                "action": decision.action,
+                "reason": decision.reason,
+                "suppressed_by_occurrence_id": decision.suppressed_by_occurrence_id,
+                "defer_until": decision.defer_until.isoformat() if decision.defer_until else None,
+            }
+            for decision in arbitration_decisions
+        ],
+        "occurrence_results": [],
+        "errors": [],
+    }
+
+    for decision in arbitration_decisions:
+        if decision.action == ACTION_SUPPRESS:
+            ledger.mark_suppressed_collision(
+                decision.occurrence,
+                suppressed_by_occurrence_id=decision.suppressed_by_occurrence_id or "",
+                suppression_reason=decision.reason,
+                arbitrated_at=current,
+            )
+            result = occurrence_result(decision.occurrence, STATUS_SUPPRESSED_COLLISION, True, decision.reason)
+        elif decision.action == ACTION_DEFER:
+            ledger.mark_deferred_collision(
+                decision.occurrence,
+                suppressed_by_occurrence_id=decision.suppressed_by_occurrence_id or "",
+                suppression_reason=decision.reason,
+                arbitrated_at=current,
+                defer_until=decision.defer_until or current,
+            )
+            result = occurrence_result(decision.occurrence, STATUS_DEFERRED_COLLISION, True, decision.reason)
+        else:
+            result = execute_scheduled_occurrence(
+                occurrence=decision.occurrence,
+                ledger=ledger,
+                output_dir=output_dir,
+                send=send,
+                timezone_name=timezone_name,
+                runner=runner or run_once,
+            )
+        status["occurrence_results"].append(result)
+        if not result.get("ok", True):
+            status["ok"] = False
+
+    ledger.update_last_check(current)
+    try:
+        ledger.save()
+    except Exception as exc:  # noqa: BLE001 - scheduler should report state persistence issues and continue.
+        status["ok"] = False
+        status["errors"].append(f"ledger_save_failed: {exc}")
+    return status
+
+
+def execute_scheduled_occurrence(
+    occurrence: ScheduledOccurrence,
+    ledger: SchedulerLedger,
+    output_dir: Path,
+    send: bool,
+    timezone_name: str,
+    runner: Callable[..., dict[str, Any]],
+) -> dict[str, Any]:
+    can_execute, reason = can_execute_occurrence(ledger, occurrence, occurrence.detected_at)
+    if reason == STATUS_SKIPPED_EXPIRED:
+        ledger.mark_skipped_expired(occurrence, occurrence.detected_at)
+        return occurrence_result(occurrence, STATUS_SKIPPED_EXPIRED, True, reason)
+    if not can_execute:
+        return occurrence_result(occurrence, "skipped", True, reason)
+
+    try:
+        ledger.mark_running(occurrence, occurrence.detected_at)
+        ledger.save()
+    except Exception as exc:  # noqa: BLE001 - do not send if we cannot record the attempt.
+        return occurrence_result(occurrence, "ledger_write_failed_before_send", False, str(exc))
+
+    try:
+        run_status = runner(
             output_dir=output_dir,
-            brief="auto",
+            brief=occurrence.brief_name,
             send=send,
             timezone_name=timezone_name,
             fallback_to_wilson=True,
         )
-        print(json.dumps({"scheduler_cycle": cycle, **status}, ensure_ascii=False, indent=2), flush=True)
-        if max_cycles is not None and cycle >= max_cycles:
-            return
-        time_module.sleep(interval * 60)
+    except Exception as exc:  # noqa: BLE001 - one bad task must not stop other due tasks.
+        finished_at = now_in_timezone(timezone_name)
+        ledger.mark_failed(occurrence, finished_at, str(exc))
+        try:
+            ledger.save()
+        except Exception:
+            pass
+        return occurrence_result(occurrence, "failed", False, str(exc))
+    finished_at = now_in_timezone(timezone_name)
+    final_delivery_status = delivery_status(run_status, send)
+    delivered = final_delivery_status == "success"
+    partial = final_delivery_status == STATUS_PARTIAL_DELIVERY
+    final_status = "success" if delivered else STATUS_PARTIAL_DELIVERY if partial else "failed"
+    try:
+        if delivered:
+            ledger.mark_success(occurrence, finished_at)
+        elif partial:
+            ledger.mark_partial_delivery(occurrence, finished_at, delivery_error_summary(run_status, send))
+        else:
+            ledger.mark_failed(occurrence, finished_at, delivery_error_summary(run_status, send))
+        ledger.save()
+    except Exception as exc:  # noqa: BLE001 - after Telegram success this is an unknown delivery state.
+        if delivered or partial:
+            ledger.mark_unknown_delivery_state(occurrence, finished_at, f"ledger_success_write_failed: {exc}")
+            remember_uncertain_occurrence(occurrence.occurrence_id)
+            journal_payload = {
+                "occurrence_id": occurrence.occurrence_id,
+                "timestamp": finished_at.isoformat(),
+                "reason": str(exc),
+                "delivery_status": final_delivery_status,
+                "message_ids": (run_status.get("brief_push") or {}).get("message_ids") if isinstance(run_status.get("brief_push"), dict) else [],
+            }
+            try:
+                write_uncertain_delivery_journal(output_dir / UNCERTAIN_DELIVERY_LOG_NAME, journal_payload)
+            except Exception as journal_exc:  # noqa: BLE001 - last-resort visibility for local runs.
+                print(f"fiona uncertain delivery journal failed: {journal_exc}", flush=True)
+            try:
+                ledger.save()
+            except Exception:
+                pass
+            return occurrence_result(occurrence, STATUS_UNKNOWN_DELIVERY_STATE, False, str(exc), run_status)
+        return occurrence_result(occurrence, "ledger_write_failed_after_run", False, str(exc), run_status)
+    return occurrence_result(occurrence, final_status, delivered or partial, "delivered" if delivered else final_delivery_status, run_status)
+
+
+def occurrence_result(
+    occurrence: ScheduledOccurrence,
+    status: str,
+    ok: bool,
+    reason: str,
+    run_status: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    result: dict[str, Any] = {
+        "ok": ok,
+        "occurrence_id": occurrence.occurrence_id,
+        "task_name": occurrence.task_name,
+        "brief_name": occurrence.brief_name,
+        "scheduled_at": occurrence.scheduled_at.isoformat(),
+        "detected_at": occurrence.detected_at.isoformat(),
+        "catch_up": occurrence.catch_up,
+        "status": status,
+        "reason": reason,
+    }
+    if run_status is not None:
+        result["run_status"] = run_status
+    return result
 
 
 def scheduler_interval_minutes(interval_minutes: int | None = None) -> int:
-    if interval_minutes is not None:
-        return max(1, interval_minutes)
-    configured = first_runtime_env("WILSON_INTERVAL_MINUTES", "FIONA_RUNTIME_INTERVAL_MINUTES", "FIONA_ALERT_INTERVAL_MINUTES")
-    return max(1, int(configured or "15"))
+    return scheduler_interval_minutes_v2(interval_minutes)
 
 
 def build_brief(
@@ -488,18 +695,40 @@ def push_alerts(alert_messages: list[str], log_path: Path) -> list[dict[str, Any
 
 
 def push_text(text: str, log_path: Path, scope: str) -> dict[str, Any]:
-    result: dict[str, Any] = {"scope": scope, "ok": False, "message_ids": [], "errors": []}
-    for index, chunk in enumerate(split_message(text), 1):
+    chunks = split_message(text)
+    result: dict[str, Any] = {
+        "scope": scope,
+        "ok": False,
+        "delivery_status": "failed",
+        "message_ids": [],
+        "successful_chunks": [],
+        "failed_chunks": [],
+        "errors": [],
+        "total_chunks": len(chunks),
+    }
+    for index, chunk in enumerate(chunks, 1):
         try:
             response = telegram_send_message(chunk)
             message_id = telegram_message_id(response)
+            if message_id is None:
+                result["failed_chunks"].append(index)
+                result["errors"].append(f"chunk {index}: missing message_id")
+                append_telegram_log(log_path, {"event": "sendMessage", "scope": scope, "ok": False, "chunk": index, "error": "missing message_id"})
+                continue
             result["message_ids"].append(message_id)
+            result["successful_chunks"].append(index)
             append_telegram_log(log_path, {"event": "sendMessage", "scope": scope, "ok": True, "chunk": index, "message_id": message_id})
         except Exception as exc:  # noqa: BLE001 - push failure must not stop Fiona.
             error = str(exc)
             result["errors"].append(error)
+            result["failed_chunks"].append(index)
             append_telegram_log(log_path, {"event": "sendMessage", "scope": scope, "ok": False, "chunk": index, "error": error})
-    result["ok"] = bool(result["message_ids"])
+    if result["successful_chunks"] and not result["failed_chunks"] and len(result["successful_chunks"]) == result["total_chunks"]:
+        result["delivery_status"] = "success"
+        result["ok"] = True
+    elif result["successful_chunks"]:
+        result["delivery_status"] = STATUS_PARTIAL_DELIVERY
+        result["ok"] = False
     return result
 
 

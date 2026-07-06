@@ -44,9 +44,12 @@ Local runtime data and historical reports live under:
 
 Scheduler polling interval priority:
 
-1. `WILSON_INTERVAL_MINUTES`
-2. `FIONA_RUNTIME_INTERVAL_MINUTES`
-3. runtime default
+1. CLI `--interval-minutes`
+2. `WILSON_INTERVAL_MINUTES`
+3. `FIONA_RUNTIME_INTERVAL_MINUTES`
+4. runtime default `5`
+
+Production recommendation: keep `WILSON_INTERVAL_MINUTES=5`. Do not use `240` for the Railway scheduler because fixed-time briefs can be missed if the process starts outside the due window.
 
 ## Scheduled Briefs
 
@@ -93,7 +96,7 @@ TELEGRAM_BOT_TOKEN=your_bot_token
 TELEGRAM_GROUP_ID=your_group_id
 WILSON_SEND=1
 WILSON_TIMEZONE=Asia/Manila
-WILSON_INTERVAL_MINUTES=240
+WILSON_INTERVAL_MINUTES=5
 FIONA_ALERT_ENABLED=0
 FIONA_ALERT_DRY_RUN=1
 ```
