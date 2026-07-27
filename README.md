@@ -99,6 +99,7 @@ WILSON_TIMEZONE=Asia/Manila
 WILSON_INTERVAL_MINUTES=5
 FIONA_ALERT_ENABLED=0
 FIONA_ALERT_DRY_RUN=1
+FIONA_MARKET_NEWS_MODE=text
 ```
 
 Send switch priority:
@@ -108,6 +109,33 @@ Send switch priority:
 3. `FIONA_SEND_TELEGRAM`
 
 If `WILSON_SEND` exists, it is the production source of truth.
+
+## Market News Image Mode
+
+Market News delivery is controlled by one feature flag:
+
+```env
+FIONA_MARKET_NEWS_MODE=text
+```
+
+- `text`: send the current text brief only. This is the default and the required
+  first-deployment setting.
+- `shadow`: send the current text brief, then generate and validate the PNG in
+  the background without sending the image.
+- `image`: send one PNG document with its Caption. A definite image-path failure
+  falls back to the current text brief.
+
+Invalid values are logged and safely treated as `text`. Do not switch Railway
+directly to `image`; validate `text`, then `shadow`, before the manual image
+cutover.
+
+Offline image delivery verification:
+
+```bash
+python3 scripts/dry_run_fiona_market_news_phase2c.py
+```
+
+The dry-run uses a fake Telegram transport and makes no network request.
 
 ## Alert Engine
 

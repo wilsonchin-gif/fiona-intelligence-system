@@ -1,2 +1,4 @@
-# Fiona Production V1 currently uses Python standard library only for the Railway runtime.
-# Keep this file so Railway/Nixpacks detects a Python project consistently.
+# Fiona Market News shadow/image modes use Pillow for PNG rendering and validation.
+# Pillow is loaded on demand; text mode and the other briefs do not render images.
+Pillow==12.3.0; python_version >= "3.10"
+Pillow==11.3.0; python_version < "3.10"

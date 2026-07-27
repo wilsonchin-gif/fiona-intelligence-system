@@ -23,6 +23,12 @@ from app.fiona_briefing import (
 from app.fiona_classifier import render_alert
 from app.fiona_engine import FionaAlertEngine
 from app.fiona_lifecycle import LifecycleManager
+from app.fiona_market_news_delivery import (
+    MarketNewsDeliveryCoordinator,
+    MarketNewsMode,
+    market_news_mode_from_env,
+)
+from app.fiona_market_news_image import build_market_news_view_model
 from app.fiona_memory import DecisionMemoryRecord, FionaMemory
 from app.fiona_narrative import NarrativeEngine
 from app.fiona_scheduler import (
@@ -47,7 +53,10 @@ from app.fiona_scheduler import (
     write_uncertain_delivery_journal,
 )
 from app.fiona_types import EventCategory, FionaEvent, MarketDirection, PushDecision
-from app.telegram_service import send_message as telegram_send_message
+from app.telegram_service import (
+    send_document_with_caption as telegram_send_document,
+    send_message as telegram_send_message,
+)
 from app.wilson import (
     DEFAULT_TIMEZONE,
     append_telegram_log,
@@ -126,10 +135,25 @@ def run_once(
         snapshot = snapshot_builder(generated_at)
         payload = build_payload(snapshot, generated_at, memory_path, brief)
         write_payload(latest_dir, archive_dir, payload, status)
+        market_news_mode: MarketNewsMode | None = None
+        if payload.brief is not None and payload.brief.kind == FionaBriefKind.MARKET_NEWS:
+            market_news_mode = market_news_mode_from_env(
+                warning_logger=lambda item: append_runtime_log(log_path, item)
+            )
+            status["market_news_mode"] = market_news_mode.value
         if send and should_push_alerts(brief):
             status["alerts"]["pushed"] = push_alerts(payload.alert_messages, log_path)
         if send and payload.brief is not None:
-            status["brief_push"] = push_text(payload.brief.render_text(), log_path, scope=payload.brief.title)
+            if payload.brief.kind == FionaBriefKind.MARKET_NEWS:
+                status["brief_push"] = push_market_news(
+                    payload,
+                    log_path,
+                    mode=market_news_mode or MarketNewsMode.TEXT,
+                    generated_at=generated_at,
+                    status=status,
+                )
+            else:
+                status["brief_push"] = push_text(payload.brief.render_text(), log_path, scope=payload.brief.title)
     except Exception as exc:  # noqa: BLE001 - runtime must not kill the scheduler on one bad cycle.
         status["ok"] = False
         status["errors"].append(str(exc))
@@ -692,6 +716,39 @@ def push_alerts(alert_messages: list[str], log_path: Path) -> list[dict[str, Any
         result = push_text(message, log_path, scope=f"Fiona Alert {index}")
         results.append(result)
     return results
+
+
+def push_market_news(
+    payload: FionaPayload,
+    log_path: Path,
+    *,
+    mode: MarketNewsMode,
+    generated_at: datetime,
+    status: dict[str, Any],
+) -> dict[str, Any]:
+    if payload.brief is None:
+        raise ValueError("Market News delivery requires a generated brief.")
+    legacy_text = payload.brief.render_text()
+    if mode == MarketNewsMode.TEXT:
+        return push_text(legacy_text, log_path, scope=payload.brief.title)
+
+    coordinator = MarketNewsDeliveryCoordinator(
+        text_sender=lambda text: push_text(text, log_path, scope=payload.brief.title),
+        document_sender=telegram_send_document,
+        logger=lambda item: append_runtime_log(log_path, item),
+    )
+    delivery = coordinator.deliver(
+        mode=mode,
+        legacy_text=legacy_text,
+        view_model_factory=lambda: build_market_news_view_model(
+            payload.snapshot,
+            payload.events,
+            payload.narratives,
+            generated_at=generated_at,
+        ),
+    )
+    status["market_news_delivery"] = delivery.to_dict()
+    return delivery.push_result
 
 
 def push_text(text: str, log_path: Path, scope: str) -> dict[str, Any]:
