@@ -125,9 +125,17 @@ class MarketNewsDeliveryCoordinatorTest(unittest.TestCase):
         self.assertTrue(result.image_validation)
         self.assertFalse(result.image_sent)
         self.assertTrue(result.cleanup_success)
+        self.assertTrue(result.cleanup_attempted)
+        self.assertEqual(result.cleanup_state(), "success")
+        self.assertEqual(result.image_width, 1080)
+        self.assertEqual(result.image_height, 1350)
+        self.assertGreater(result.image_size_bytes, 0)
+        self.assertGreater(result.caption_length, 0)
         deps["text_sender"].assert_called_once()
         deps["renderer"].assert_called_once()
         deps["document_sender"].assert_not_called()
+        rendered_path = Path(deps["renderer"].call_args.args[1])
+        self.assertFalse(rendered_path.exists())
 
     def test_shadow_renderer_failure_does_not_change_text_success(self) -> None:
         coordinator, deps = self.coordinator(renderer=Mock(side_effect=RuntimeError("renderer failed")))
@@ -140,6 +148,10 @@ class MarketNewsDeliveryCoordinatorTest(unittest.TestCase):
         self.assertEqual(result.push_result["delivery_status"], "success")
         self.assertEqual(result.error_category, "renderer_failed")
         self.assertFalse(result.fallback_used)
+        self.assertEqual(result.fallback_state(), "not_applicable")
+        self.assertTrue(result.cleanup_success)
+        self.assertEqual(result.cleanup_state(), "success")
+        deps["text_sender"].assert_called_once()
         deps["document_sender"].assert_not_called()
 
     def test_shadow_invalid_png_does_not_change_text_success(self) -> None:
@@ -356,25 +368,35 @@ class MarketNewsDeliveryCoordinatorTest(unittest.TestCase):
 
     def test_logs_contain_metrics_but_not_caption_or_credentials(self) -> None:
         logs: list[dict] = []
+        document_sender = Mock(side_effect=document_success)
         coordinator = MarketNewsDeliveryCoordinator(
             text_sender=text_success,
-            document_sender=document_success,
+            document_sender=document_sender,
             logger=logs.append,
         )
         result = coordinator.deliver(
-            mode=MarketNewsMode.IMAGE,
+            mode=MarketNewsMode.SHADOW,
             legacy_text="legacy",
             view_model_factory=sample_view_model,
             occurrence_id="market_news:test",
         )
         payload = logs[-1]
         self.assertEqual(payload["occurrence_id"], "market_news:test")
+        self.assertEqual(payload["delivery_mode"], "shadow")
+        self.assertTrue(payload["render_success"])
+        self.assertEqual(payload["png_width"], 1080)
+        self.assertEqual(payload["png_height"], 1350)
+        self.assertGreater(payload["png_size_bytes"], 0)
+        self.assertGreater(payload["caption_length"], 0)
+        self.assertEqual(payload["fallback_state"], "not_applicable")
+        self.assertEqual(payload["cleanup_state"], "success")
         self.assertEqual(payload["image_width"], 1080)
         self.assertEqual(payload["image_height"], 1350)
         self.assertEqual(payload["market_regime"], result.market_regime)
         self.assertEqual(payload["evidence_level"], EvidenceLevel.VERIFIED.value)
-        self.assertNotIn("caption", payload)
-        self.assertNotIn("bot_token", payload)
+        document_sender.assert_not_called()
+        for forbidden_key in ("caption", "bot_token", "legacy_text", "chat_id", "user_data"):
+            self.assertNotIn(forbidden_key, payload)
 
 
 class MarketNewsImageValidationTest(unittest.TestCase):

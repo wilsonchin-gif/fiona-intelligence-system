@@ -70,13 +70,41 @@ class MarketNewsDeliveryResult:
     message_ids: list[int] = field(default_factory=list)
     final_delivery_channel: str = ""
     cleanup_success: bool = True
+    cleanup_attempted: bool = False
     unknown_delivery_state: bool = False
     push_result: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)
         payload.pop("push_result", None)
+        payload.update(self.observability_fields())
         return payload
+
+    def observability_fields(self) -> dict[str, Any]:
+        return {
+            "delivery_mode": self.requested_mode,
+            "render_success": self.image_generated and self.image_validation,
+            "png_width": self.image_width,
+            "png_height": self.image_height,
+            "png_size_bytes": self.image_size_bytes,
+            "caption_length": self.caption_length,
+            "fallback_state": self.fallback_state(),
+            "cleanup_state": self.cleanup_state(),
+        }
+
+    def fallback_state(self) -> str:
+        if self.fallback_used:
+            return "used"
+        if self.requested_mode != MarketNewsMode.IMAGE.value:
+            return "not_applicable"
+        if self.unknown_delivery_state:
+            return "suppressed_unknown_delivery"
+        return "not_used"
+
+    def cleanup_state(self) -> str:
+        if not self.cleanup_attempted:
+            return "not_required"
+        return "success" if self.cleanup_success else "failed"
 
 
 def market_news_mode_from_env(
@@ -229,6 +257,7 @@ class MarketNewsDeliveryCoordinator:
                 )
         finally:
             if temp_directory is not None:
+                result.cleanup_attempted = True
                 try:
                     temp_directory.cleanup()
                 except Exception as exc:  # noqa: BLE001 - cleanup visibility must not alter delivery.
@@ -266,13 +295,15 @@ class MarketNewsDeliveryCoordinator:
         result: MarketNewsDeliveryResult,
         occurrence_id: str | None,
     ) -> None:
+        observability = result.observability_fields()
         self.logger(
             {
                 "event": "fionaMarketNewsDelivery",
                 "mode": result.requested_mode,
+                "delivery_mode": observability["delivery_mode"],
                 "occurrence_id": occurrence_id,
                 "brief_type": "market_news",
-                "render_success": result.image_generated and result.image_validation,
+                "render_success": observability["render_success"],
                 "image_generated": result.image_generated,
                 "image_validation": result.image_validation,
                 "document_send_status": (
@@ -287,14 +318,19 @@ class MarketNewsDeliveryCoordinator:
                 "image_width": result.image_width,
                 "image_height": result.image_height,
                 "image_size_bytes": result.image_size_bytes,
-                "caption_length": result.caption_length,
+                "png_width": observability["png_width"],
+                "png_height": observability["png_height"],
+                "png_size_bytes": observability["png_size_bytes"],
+                "caption_length": observability["caption_length"],
                 "data_completeness": result.data_completeness,
                 "market_regime": result.market_regime,
                 "evidence_level": result.evidence_level,
                 "fallback_used": result.fallback_used,
                 "fallback_reason": result.fallback_reason,
+                "fallback_state": observability["fallback_state"],
                 "final_delivery_channel": result.final_delivery_channel,
                 "cleanup_success": result.cleanup_success,
+                "cleanup_state": observability["cleanup_state"],
                 "error_category": result.error_category,
             }
         )
