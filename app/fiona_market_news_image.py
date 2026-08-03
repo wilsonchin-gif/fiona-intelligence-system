@@ -5,7 +5,7 @@ import re
 import struct
 import tempfile
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
@@ -16,10 +16,27 @@ from app.fiona_types import FionaEvent, NarrativeRecord, NarrativeStatus
 
 IMAGE_WIDTH = 1080
 IMAGE_HEIGHT = 1350
-CAPTION_MIN_CHARS = 120
-CAPTION_MAX_CHARS = 350
+CAPTION_MIN_CHARS = 220
+CAPTION_MAX_CHARS = 760
+CAPTION_BODY_MIN_CHARS = 180
+CAPTION_IDEAL_BODY_MIN_CHARS = 220
+CAPTION_IDEAL_BODY_MAX_CHARS = 320
+CAPTION_BODY_MAX_CHARS = 380
 MAX_TAGS = 8
 DISCLAIMER = "本内容仅供参考，不构成任何投资建议。投资有风险，入市需谨慎。"
+CAPTION_DISCLAIMER = "本内容仅供参考，不构成任何投资建议。"
+CAPTION_TIMEZONE = timezone(timedelta(hours=8))
+CAPTION_FORBIDDEN_REPLACEMENTS = {
+    "重磅": "重要",
+    "暴涨": "大幅上涨",
+    "暴跌预警": "显著下跌风险",
+    "大机会": "重要变化",
+    "千载难逢": "罕见",
+    "牛市启动": "风险偏好改善",
+    "财富密码": "市场线索",
+    "精准预测": "判断",
+    "独家发现": "观察到",
+}
 
 
 @dataclass(frozen=True)
@@ -118,38 +135,343 @@ def build_market_news_view_model(
 
 
 def compose_market_news_caption(view_model: MarketNewsViewModel) -> str:
-    state = summarize_market_state(view_model.heat_map)
-    changed = view_model.what_changed[0].event if view_model.what_changed else "暂无新增高价值变化"
-    view = ensure_sentence(compact_text(view_model.fiona_view, 118))
-    hashtags = " ".join(view_model.telegram_hashtags)
-    caption = (
-        "Fiona Market News\n\n"
-        f"过去4小时市场概览：{state}\n\n"
-        f"关键变化：{compact_text(changed, 72)}。\n\n"
-        f"【Fiona’s View】{view}\n\n"
-        f"{hashtags}"
+    evidence, regime, watch_items = caption_intelligence(view_model)
+    evidence_name = evidence.level.value
+    regime_name = regime.regime.value
+    cautious = evidence_name == "Limited" or regime_name == "Unknown"
+    changes = compose_caption_changes(view_model.what_changed, cautious=cautious)
+    if not view_model.current_narrative:
+        changes = (
+            *changes[:1],
+            "暂无高置信主叙事，当前变化仍以分散信号为主。",
+        )
+    watches = compose_caption_watch_items(
+        watch_items,
+        cautious=cautious,
+        has_narrative=bool(view_model.current_narrative),
+    )
+    fiona_view = compose_caption_fiona_view(
+        view_model,
+        evidence_name=evidence_name,
+        regime_name=regime_name,
+        watch_items=watches,
+    )
+    hashtags = select_caption_hashtags(view_model)
+    timestamp = view_model.generated_at.astimezone(CAPTION_TIMEZONE).strftime("%Y-%m-%d %H:%M")
+
+    caption = compress_market_news_caption(
+        timestamp=timestamp,
+        regime_name=regime_name,
+        evidence_name=evidence_name,
+        changes=changes,
+        fiona_view=fiona_view,
+        watch_items=watches,
+        hashtags=hashtags,
+    )
+    return sanitize_caption_language(caption)
+
+
+def caption_intelligence(view_model: MarketNewsViewModel) -> tuple[Any, Any, tuple[str, ...]]:
+    from app.fiona_card_renderer import (
+        derive_evidence_level,
+        derive_market_regime,
+        derive_watch_next,
+    )
+
+    return (
+        derive_evidence_level(view_model),
+        derive_market_regime(view_model),
+        derive_watch_next(view_model),
+    )
+
+
+def compose_caption_changes(
+    changed_events: Iterable[ChangedEventView],
+    *,
+    cautious: bool,
+) -> tuple[str, ...]:
+    output: list[str] = []
+    for item in changed_events:
+        event = complete_phrase(item.event, 54, "出现新的高价值变化")
+        if cautious:
+            line = f"{event}；其市场影响仍待更多数据确认"
+        else:
+            why = complete_phrase(item.why, 58, "其跨市场影响值得继续验证")
+            line = f"{event}；{why}"
+        normalized = ensure_sentence(line)
+        if normalized not in output:
+            output.append(normalized)
+        if len(output) == 2:
+            break
+    return tuple(output or ["暂无新增高价值变化。"])
+
+
+def compose_caption_watch_items(
+    watch_items: Iterable[str],
+    *,
+    cautious: bool,
+    has_narrative: bool,
+) -> tuple[str, ...]:
+    output: list[str] = []
+    for raw in watch_items:
+        value = clean_inline_text(raw)
+        if not value or is_generic_watch(value):
+            continue
+        fitted = complete_phrase(value, 46, "资金流与关键资产是否形成同向确认")
+        fitted = fitted.rstrip("。！？?!")
+        if fitted and fitted.casefold() not in {item.casefold() for item in output}:
+            output.append(fitted)
+        if len(output) == 3:
+            break
+    if cautious:
+        prepend_unique(output, "核心市场数据覆盖是否恢复")
+    if not has_narrative:
+        narrative_watch = "主叙事是否获得资金流与价格确认"
+        if len(output) >= 3 and narrative_watch.casefold() not in {
+            item.casefold() for item in output
+        }:
+            output[-1] = narrative_watch
+        else:
+            append_unique(output, narrative_watch)
+    if not output:
+        output.append("资金流与关键资产是否形成同向确认")
+    return tuple(output[:3])
+
+
+def compose_caption_fiona_view(
+    view_model: MarketNewsViewModel,
+    *,
+    evidence_name: str,
+    regime_name: str,
+    watch_items: tuple[str, ...],
+) -> str:
+    next_watch = watch_items[0] if watch_items else "资金流与关键资产是否形成同向确认"
+    if regime_name == "Unknown":
+        return (
+            "当前信号覆盖不足，Fiona暂不形成明确市场状态判断。"
+            f"现阶段更重要的是等待{next_watch}，数据恢复后再重新评估跨市场方向。"
+        )
+    if evidence_name == "Limited":
+        return (
+            "当前证据仍有限，价格变化尚不足以支持强方向判断。"
+            f"Fiona暂时更关注{next_watch}，只有资金与风险偏好形成一致确认后才会提高判断强度。"
+        )
+
+    base = complete_sentence_summary(
+        view_model.fiona_view,
+        max_chars=140,
+        fallback="当前市场方向尚未形成稳定共振，单一资产波动不足以代表整体状态。",
+        max_sentences=2,
+    )
+    if count_cjk_characters(base) < 70:
+        base = (
+            f"{base}当前判断仍需由{next_watch}进一步验证；"
+            "在价格、成交与资金没有形成一致确认前，单一资产的短线变化不足以代表跨市场方向。"
+        )
+    return complete_sentence_summary(base, max_chars=160, fallback=base, max_sentences=3)
+
+
+def select_caption_hashtags(view_model: MarketNewsViewModel) -> tuple[str, ...]:
+    priority = {
+        TagType.ASSET: 0,
+        TagType.NARRATIVE: 1,
+        TagType.INSTITUTION: 2,
+        TagType.POLICY: 2,
+        TagType.RISK: 3,
+        TagType.MARKET: 4,
+    }
+    ordered = sorted(
+        enumerate(view_model.tags),
+        key=lambda item: (priority.get(item[1].tag_type, 5), item[0]),
+    )
+    candidates = [tag.telegram_hashtag for _, tag in ordered]
+    candidates.append("#MarketSnapshot")
+    aliases = {
+        "#bitcoin": "#btc",
+        "#federalreserve": "#fed",
+        "#markets": "#marketsnapshot",
+    }
+    output: list[str] = []
+    seen: set[str] = set()
+    for raw in candidates:
+        hashtag = str(raw or "").strip()
+        if not hashtag:
+            continue
+        canonical = aliases.get(hashtag.casefold(), hashtag.casefold())
+        if canonical in seen:
+            continue
+        seen.add(canonical)
+        output.append(hashtag)
+        if len(output) == MAX_TAGS:
+            break
+    return tuple(output)
+
+
+def compress_market_news_caption(
+    *,
+    timestamp: str,
+    regime_name: str,
+    evidence_name: str,
+    changes: tuple[str, ...],
+    fiona_view: str,
+    watch_items: tuple[str, ...],
+    hashtags: tuple[str, ...],
+) -> str:
+    policies = (
+        (2, 3, 8, 160),
+        (1, 3, 8, 160),
+        (1, 2, 6, 150),
+        (1, 2, 5, 125),
+    )
+    for change_limit, watch_limit, hashtag_limit, view_limit in policies:
+        candidate = render_caption_sections(
+            timestamp=timestamp,
+            regime_name=regime_name,
+            evidence_name=evidence_name,
+            changes=changes[:change_limit],
+            fiona_view=complete_sentence_summary(
+                fiona_view,
+                max_chars=view_limit,
+                fallback="当前市场状态仍需资金与跨市场信号进一步确认。",
+                max_sentences=3,
+            ),
+            watch_items=watch_items[:watch_limit],
+            hashtags=hashtags[:hashtag_limit],
+        )
+        if len(candidate) <= CAPTION_MAX_CHARS:
+            return candidate
+
+    return render_caption_sections(
+        timestamp=timestamp,
+        regime_name=regime_name,
+        evidence_name=evidence_name,
+        changes=("出现新的高价值变化，具体证据见图片。",),
+        fiona_view="当前市场状态仍需资金流与跨市场信号进一步确认，Fiona会在证据形成一致性后重新评估。",
+        watch_items=watch_items[:2] or ("资金流与关键资产是否形成同向确认",),
+        hashtags=hashtags[:5],
+    )
+
+
+def render_caption_sections(
+    *,
+    timestamp: str,
+    regime_name: str,
+    evidence_name: str,
+    changes: tuple[str, ...],
+    fiona_view: str,
+    watch_items: tuple[str, ...],
+    hashtags: tuple[str, ...],
+) -> str:
+    change_lines = "\n".join(f"• {item}" for item in changes)
+    watch_lines = "\n".join(f"• {item}" for item in watch_items)
+    tag_line = " ".join(hashtags)
+    return (
+        "Fiona Market News\n"
+        f"{timestamp} UTC+8\n\n"
+        "【Market Regime】\n"
+        f"{regime_name}｜Evidence: {evidence_name}\n\n"
+        "【What Changed】\n"
+        f"{change_lines}\n\n"
+        "【Fiona’s View】\n"
+        f"{ensure_sentence(fiona_view)}\n\n"
+        "【Watch Next】\n"
+        f"{watch_lines}\n\n"
+        f"{tag_line}\n\n"
+        f"{CAPTION_DISCLAIMER}"
     ).strip()
-    if len(caption) < CAPTION_MIN_CHARS:
-        quality = (
-            "当前数据覆盖完整，"
-            if view_model.data_quality.status == "Full"
-            else "部分数据仍待下一轮确认，"
-        )
-        caption = caption.replace(
-            "【Fiona’s View】",
-            f"市场判断：{quality}单一资产波动暂不代表跨市场方向。\n\n【Fiona’s View】",
-            1,
-        )
-    if len(caption) > CAPTION_MAX_CHARS:
-        fixed = (
-            "Fiona Market News\n\n"
-            f"过去4小时市场概览：{compact_text(state, 82)}\n\n"
-            f"关键变化：{compact_text(changed, 48)}。\n\n"
-        )
-        suffix = f"\n\n{' '.join(view_model.telegram_hashtags)}"
-        allowance = CAPTION_MAX_CHARS - len(fixed) - len("【Fiona’s View】") - len(suffix)
-        caption = f"{fixed}【Fiona’s View】{compact_text(view_model.fiona_view, max(42, allowance))}{suffix}"
-    return sanitize_output(caption)
+
+
+def complete_sentence_summary(
+    value: str,
+    *,
+    max_chars: int,
+    fallback: str,
+    max_sentences: int,
+) -> str:
+    cleaned = clean_inline_text(remove_price_predictions(value))
+    if not cleaned:
+        return ensure_sentence(fallback)
+    sentences = split_complete_sentences(cleaned)
+    selected: list[str] = []
+    for sentence in sentences:
+        candidate = "".join(selected + [sentence])
+        if len(candidate) > max_chars or len(selected) >= max_sentences:
+            break
+        selected.append(sentence)
+    if selected:
+        return "".join(selected)
+    return complete_phrase(cleaned, max_chars, fallback)
+
+
+def complete_phrase(value: str, max_chars: int, fallback: str) -> str:
+    cleaned = clean_inline_text(remove_price_predictions(value))
+    if not cleaned:
+        return ensure_sentence(fallback)
+    if len(cleaned) <= max_chars:
+        return cleaned
+    sentences = split_complete_sentences(cleaned)
+    if sentences and len(sentences[0]) <= max_chars:
+        return sentences[0]
+    clauses = re.split(r"(?<=[，；,:：])", cleaned)
+    selected = ""
+    for clause in clauses:
+        if not clause or len(selected + clause) > max_chars:
+            break
+        selected += clause
+    selected = selected.rstrip("，；,:： ")
+    return selected if selected else ensure_sentence(fallback)
+
+
+def split_complete_sentences(value: str) -> list[str]:
+    normalized = clean_inline_text(value)
+    parts = re.findall(r"[^。！？.!?]+[。！？.!?]", normalized)
+    consumed = "".join(parts)
+    tail = normalized[len(consumed) :].strip()
+    if tail and len(tail) <= 70:
+        parts.append(ensure_sentence(tail))
+    return [item.strip() for item in parts if item.strip()]
+
+
+def clean_inline_text(value: str) -> str:
+    return re.sub(r"\s+", " ", sanitize_output(str(value or ""))).strip()
+
+
+def sanitize_caption_language(value: str) -> str:
+    output = remove_price_predictions(sanitize_output(value))
+    for forbidden, replacement in CAPTION_FORBIDDEN_REPLACEMENTS.items():
+        output = output.replace(forbidden, replacement)
+    return output.strip()
+
+
+def remove_price_predictions(value: str) -> str:
+    output = str(value or "")
+    output = re.sub(
+        r"\b[A-Z]{2,12}\s*(?:将|会)(?:上涨|下跌|涨至|跌至)[^。！？\n]*",
+        "相关资产方向仍需进一步确认",
+        output,
+        flags=re.IGNORECASE,
+    )
+    output = re.sub(r"明天一定[^。！？\n]*", "后续变化仍需验证", output)
+    return output
+
+
+def count_cjk_characters(value: str) -> int:
+    return len(re.findall(r"[\u3400-\u9fff]", str(value or "")))
+
+
+def is_generic_watch(value: str) -> bool:
+    normalized = re.sub(r"[，。！？?!\s]", "", value).casefold()
+    return normalized in {"关注市场变化", "关注宏观", "关注风险", "关注btc", "等待下一轮数据确认"}
+
+
+def prepend_unique(output: list[str], value: str) -> None:
+    if value.casefold() not in {item.casefold() for item in output}:
+        output.insert(0, value)
+
+
+def append_unique(output: list[str], value: str) -> None:
+    if value.casefold() not in {item.casefold() for item in output}:
+        output.append(value)
 
 
 def render_market_news_svg(view_model: MarketNewsViewModel) -> str:
