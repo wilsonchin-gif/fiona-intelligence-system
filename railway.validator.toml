@@ -1,0 +1,6 @@
+[build]
+builder = "NIXPACKS"
+
+[deploy]
+startCommand = "python3 -m app.fiona_runtime validate-market-news-image"
+restartPolicyType = "NEVER"
