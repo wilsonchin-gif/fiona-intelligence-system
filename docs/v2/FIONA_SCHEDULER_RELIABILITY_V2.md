@@ -112,7 +112,7 @@ Properties:
 | Market News | 00:00 | 60 minutes |
 | Morning | 07:30 | 120 minutes |
 | Evening | 20:30 | 150 minutes |
-| Daily | 22:30 | 180 minutes |
+| Daily | 22:30 | 120 minutes; never after next-day 00:30 |
 | Weekly | Sunday 21:00 | 240 minutes |
 
 Weekly uses `240 minutes`, not `360 minutes`, so Monday 02:00 does not send a stale Sunday Weekly. This matches the product requirement that old Weekly briefings should not be pushed after they lose timing value.
@@ -248,8 +248,13 @@ Updated catch-up windows:
 | Market News | 60 minutes |
 | Morning | 120 minutes |
 | Evening | 150 minutes |
-| Daily | 180 minutes |
+| Daily | 120 minutes; never after next-day 00:30 |
 | Weekly | 240 minutes |
+
+Before collision arbitration, expired occurrences are removed from the
+candidate set and recorded as `skipped_expired`. Collision arbitration then
+applies normal-over-catch-up, current-day-over-previous-day, and freshness-aware
+selection. New collision losers are terminally suppressed rather than deferred.
 
 ## 12. Railway Limitations
 

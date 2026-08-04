@@ -36,7 +36,7 @@ CATCH_UP_WINDOWS_MINUTES: dict[FionaBriefKind, int] = {
     FionaBriefKind.MARKET_NEWS: 60,
     FionaBriefKind.MORNING: 120,
     FionaBriefKind.EVENING: 150,
-    FionaBriefKind.DAILY: 180,
+    FionaBriefKind.DAILY: 120,
     FionaBriefKind.WEEKLY: 240,
 }
 TASK_PRIORITY: dict[FionaBriefKind, int] = {
@@ -48,6 +48,7 @@ TASK_PRIORITY: dict[FionaBriefKind, int] = {
 }
 COLLISION_WINDOW_MINUTES = 180
 FRESH_OCCURRENCE_MINUTES = 10
+DAILY_NEXT_DAY_CUTOFF = time(0, 30)
 DEFER_MINUTES = DEFAULT_POLLING_INTERVAL_MINUTES
 UNCERTAIN_DELIVERY_LOG_NAME = "fiona_scheduler_delivery_uncertain.log"
 KNOWN_UNCERTAIN_OCCURRENCES: set[str] = set()
@@ -323,8 +324,16 @@ def scheduled_points_between(start_exclusive: datetime, end_inclusive: datetime,
 
 def occurrence_expired(occurrence: ScheduledOccurrence, now: datetime) -> bool:
     kind = FionaBriefKind(occurrence.brief_name)
+    current = to_timezone(now, occurrence.scheduled_at.tzinfo)
+    scheduled = occurrence.scheduled_at.astimezone(current.tzinfo)
+    if (
+        kind == FionaBriefKind.DAILY
+        and current.date() > scheduled.date()
+        and current.timetz().replace(tzinfo=None) > DAILY_NEXT_DAY_CUTOFF
+    ):
+        return True
     max_age = timedelta(minutes=CATCH_UP_WINDOWS_MINUTES[kind])
-    return to_timezone(now, occurrence.scheduled_at.tzinfo) - occurrence.scheduled_at > max_age
+    return current - scheduled > max_age
 
 
 def can_execute_occurrence(
@@ -404,7 +413,7 @@ def arbitrate_occurrences(occurrences: list[ScheduledOccurrence], now: datetime)
 
 def arbitrate_collision_group(group: list[ScheduledOccurrence], now: datetime) -> list[ArbitrationDecision]:
     winner = select_collision_winner(group, now)
-    decisions = [ArbitrationDecision(winner, ACTION_SEND, "highest_value_collision_candidate")]
+    decisions = [ArbitrationDecision(winner, ACTION_SEND, collision_winner_reason(group, winner, now))]
     for occurrence in group:
         if occurrence.occurrence_id == winner.occurrence_id:
             continue
@@ -432,32 +441,84 @@ def arbitrate_collision_group(group: list[ScheduledOccurrence], now: datetime) -
 
 
 def select_collision_winner(group: list[ScheduledOccurrence], now: datetime) -> ScheduledOccurrence:
-    weekly_candidates = [occurrence for occurrence in group if occurrence.brief_name == FionaBriefKind.WEEKLY.value]
-    market_candidates = [occurrence for occurrence in group if occurrence.brief_name == FionaBriefKind.MARKET_NEWS.value]
-    if weekly_candidates and any(occurrence_age_minutes(occurrence, now) <= CATCH_UP_WINDOWS_MINUTES[FionaBriefKind.MARKET_NEWS] for occurrence in market_candidates):
-        return max(weekly_candidates, key=lambda occurrence: collision_score(occurrence, now))
-    return max(group, key=lambda occurrence: collision_score(occurrence, now))
+    candidates = list(group)
+    normal_candidates = [occurrence for occurrence in candidates if occurrence_is_normal(occurrence, now)]
+    if normal_candidates:
+        candidates = normal_candidates
 
+    current_day_candidates = [
+        occurrence for occurrence in candidates if occurrence_is_current_local_day(occurrence, now)
+    ]
+    if current_day_candidates:
+        candidates = current_day_candidates
 
-def collision_score(occurrence: ScheduledOccurrence, now: datetime) -> float:
-    kind = FionaBriefKind(occurrence.brief_name)
-    age = occurrence_age_minutes(occurrence, now)
-    freshness_bonus = 1000 if age <= FRESH_OCCURRENCE_MINUTES else 0
-    normal_bonus = 300 if not occurrence.catch_up else 0
-    return TASK_PRIORITY[kind] + freshness_bonus + normal_bonus - (age / 2)
+    if all(occurrence_is_normal(occurrence, now) for occurrence in candidates):
+        return max(
+            candidates,
+            key=lambda occurrence: (
+                TASK_PRIORITY[FionaBriefKind(occurrence.brief_name)],
+                -occurrence_age_minutes(occurrence, now),
+                occurrence.scheduled_at,
+            ),
+        )
+    return max(
+        candidates,
+        key=lambda occurrence: (
+            -occurrence_age_minutes(occurrence, now),
+            TASK_PRIORITY[FionaBriefKind(occurrence.brief_name)],
+            occurrence.scheduled_at,
+        ),
+    )
 
 
 def should_defer_collision(occurrence: ScheduledOccurrence, winner: ScheduledOccurrence, now: datetime) -> bool:
-    if occurrence.brief_name != FionaBriefKind.MARKET_NEWS.value:
-        return False
-    if occurrence_age_minutes(occurrence, now) > FRESH_OCCURRENCE_MINUTES:
-        return False
-    return TASK_PRIORITY[FionaBriefKind(winner.brief_name)] > TASK_PRIORITY[FionaBriefKind.MARKET_NEWS]
+    # Collision losers are terminally suppressed. Deferral can create a second
+    # notification burst after the winner has already been delivered.
+    return False
+
+
+def occurrence_is_normal(occurrence: ScheduledOccurrence, now: datetime) -> bool:
+    return occurrence_age_minutes(occurrence, now) <= FRESH_OCCURRENCE_MINUTES
+
+
+def occurrence_is_current_local_day(occurrence: ScheduledOccurrence, now: datetime) -> bool:
+    current = to_timezone(now, occurrence.scheduled_at.tzinfo)
+    scheduled = occurrence.scheduled_at.astimezone(current.tzinfo)
+    return scheduled.date() == current.date()
+
+
+def collision_winner_reason(
+    group: list[ScheduledOccurrence],
+    winner: ScheduledOccurrence,
+    now: datetime,
+) -> str:
+    if occurrence_is_normal(winner, now) and any(
+        not occurrence_is_normal(candidate, now) for candidate in group
+    ):
+        rule = "normal_over_catch_up"
+    elif occurrence_is_current_local_day(winner, now) and any(
+        not occurrence_is_current_local_day(candidate, now) for candidate in group
+    ):
+        rule = "current_day_over_previous_day"
+    elif any(
+        occurrence_age_minutes(winner, now) < occurrence_age_minutes(candidate, now)
+        for candidate in group
+        if candidate.occurrence_id != winner.occurrence_id
+    ):
+        rule = "freshness_before_static_priority"
+    else:
+        rule = "semantic_priority"
+    return (
+        f"{rule}; winner={winner.brief_name}; "
+        f"winner_age={occurrence_age_minutes(winner, now):.0f}m"
+    )
 
 
 def collision_reason(occurrence: ScheduledOccurrence, winner: ScheduledOccurrence, now: datetime) -> str:
     return (
         f"collision_with_{winner.brief_name}; "
+        f"candidate_class={'normal' if occurrence_is_normal(occurrence, now) else 'catch_up'}; "
+        f"winner_class={'normal' if occurrence_is_normal(winner, now) else 'catch_up'}; "
         f"candidate_age={occurrence_age_minutes(occurrence, now):.0f}m; "
         f"winner_age={occurrence_age_minutes(winner, now):.0f}m"
     )

@@ -10,11 +10,9 @@ from app.fiona_briefing import BRIEF_SCHEDULES, FionaBriefKind
 from app.fiona_contracts import Route, RouteDecision
 from app.fiona_runtime import execute_scheduled_occurrence, push_text, run_scheduler, run_scheduler_cycle, scheduler_interval_minutes
 from app.fiona_scheduler import (
-    ACTION_DEFER,
     ACTION_SEND,
     ACTION_SUPPRESS,
     MAX_ATTEMPTS,
-    STATUS_DEFERRED_COLLISION,
     STATUS_FAILED,
     STATUS_PARTIAL_DELIVERY,
     STATUS_RUNNING,
@@ -390,7 +388,7 @@ class FionaSchedulerReliabilityTest(unittest.TestCase):
         ]
         decisions = arbitrate_occurrences(due, dt("2026-07-06T01:00:00"))
         self.assertEqual(sum(1 for item in decisions if item.action == ACTION_SEND), 1)
-        self.assertEqual([item.occurrence.brief_name for item in decisions if item.action == ACTION_SEND], ["weekly"])
+        self.assertEqual([item.occurrence.brief_name for item in decisions if item.action == ACTION_SEND], ["market_news"])
 
     def test_multiple_due_independent_tasks_both_send(self) -> None:
         due = [
@@ -400,14 +398,14 @@ class FionaSchedulerReliabilityTest(unittest.TestCase):
         decisions = arbitrate_occurrences(due, dt("2026-07-07T07:30:00"))
         self.assertEqual([item.action for item in decisions], [ACTION_SEND, ACTION_SEND])
 
-    def test_market_news_defer_when_weekly_has_higher_value(self) -> None:
+    def test_current_day_market_news_suppresses_previous_day_weekly(self) -> None:
         due = [
             occurrence(FionaBriefKind.WEEKLY, "2026-07-05T21:00:00", "2026-07-06T00:05:00"),
             occurrence(FionaBriefKind.MARKET_NEWS, "2026-07-06T00:00:00", "2026-07-06T00:05:00"),
         ]
         decisions = {item.occurrence.brief_name: item.action for item in arbitrate_occurrences(due, dt("2026-07-06T00:05:00"))}
-        self.assertEqual(decisions["weekly"], ACTION_SEND)
-        self.assertEqual(decisions["market_news"], ACTION_DEFER)
+        self.assertEqual(decisions["weekly"], ACTION_SUPPRESS)
+        self.assertEqual(decisions["market_news"], ACTION_SEND)
 
     def test_suppression_ledger_audit(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -427,7 +425,7 @@ class FionaSchedulerReliabilityTest(unittest.TestCase):
             "2026-07-07T14:00:00": [],
             "2026-07-07T20:35:00": ["evening"],
             "2026-07-07T23:10:00": ["daily"],
-            "2026-07-06T01:00:00": ["weekly"],
+            "2026-07-06T01:00:00": ["market_news"],
         }
         for timestamp, expected in cases.items():
             with self.subTest(timestamp=timestamp):

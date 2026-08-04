@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
+import re
+import tempfile
 import time as time_module
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -24,11 +27,22 @@ from app.fiona_classifier import render_alert
 from app.fiona_engine import FionaAlertEngine
 from app.fiona_lifecycle import LifecycleManager
 from app.fiona_market_news_delivery import (
+    EXPECTED_IMAGE_SIZE,
+    MAX_IMAGE_BYTES,
     MarketNewsDeliveryCoordinator,
     MarketNewsMode,
     market_news_mode_from_env,
+    render_with_pillow,
+    safe_error,
+    validate_market_news_png,
 )
-from app.fiona_market_news_image import build_market_news_view_model
+from app.fiona_market_news_image import (
+    CAPTION_MAX_CHARS,
+    MAX_TAGS,
+    build_market_news_view_model,
+    caption_intelligence,
+    compose_market_news_caption,
+)
 from app.fiona_memory import DecisionMemoryRecord, FionaMemory
 from app.fiona_narrative import NarrativeEngine
 from app.fiona_scheduler import (
@@ -48,6 +62,7 @@ from app.fiona_scheduler import (
     delivery_error_summary,
     delivery_status,
     due_occurrences,
+    occurrence_expired,
     remember_uncertain_occurrence,
     scheduler_interval_minutes as scheduler_interval_minutes_v2,
     write_uncertain_delivery_journal,
@@ -286,7 +301,31 @@ def run_scheduler_cycle(
     ledger = SchedulerLedger.load(ledger_path)
     occurrences = due_occurrences(current, ledger.last_check_at, timezone_name)
     occurrences.extend(ledger.deferred_occurrences(current))
-    arbitration_decisions = arbitrate_occurrences(occurrences, current)
+    eligible_occurrences: list[ScheduledOccurrence] = []
+    expired_results: list[dict[str, Any]] = []
+    preserved_terminal_statuses = {
+        "success",
+        STATUS_SKIPPED_EXPIRED,
+        STATUS_UNKNOWN_DELIVERY_STATE,
+        STATUS_PARTIAL_DELIVERY,
+        STATUS_SUPPRESSED_COLLISION,
+    }
+    for occurrence in {item.occurrence_id: item for item in occurrences}.values():
+        if not occurrence_expired(occurrence, current):
+            eligible_occurrences.append(occurrence)
+            continue
+        existing = ledger.entry_for(occurrence)
+        existing_status = str(existing.get("status", "")) if existing else ""
+        if existing_status in preserved_terminal_statuses:
+            expired_results.append(
+                occurrence_result(occurrence, "skipped", True, existing_status)
+            )
+            continue
+        ledger.mark_skipped_expired(occurrence, current)
+        expired_results.append(
+            occurrence_result(occurrence, STATUS_SKIPPED_EXPIRED, True, "catch_up_window_expired")
+        )
+    arbitration_decisions = arbitrate_occurrences(eligible_occurrences, current)
     status: dict[str, Any] = {
         "ok": True,
         "scheduler_now": current.isoformat(),
@@ -306,7 +345,7 @@ def run_scheduler_cycle(
             }
             for decision in arbitration_decisions
         ],
-        "occurrence_results": [],
+        "occurrence_results": expired_results,
         "errors": [],
     }
 
@@ -449,6 +488,163 @@ def occurrence_result(
 
 def scheduler_interval_minutes(interval_minutes: int | None = None) -> int:
     return scheduler_interval_minutes_v2(interval_minutes)
+
+
+def validate_market_news_image_runtime(
+    output_dir: Path = DEFAULT_OUTPUT,
+    timezone_name: str = DEFAULT_TIMEZONE,
+    snapshot_builder: Callable[[datetime], dict[str, Any]] = build_snapshot,
+    renderer: Callable[[Any, str | Path], Path] | None = None,
+) -> dict[str, Any]:
+    result: dict[str, Any] = {
+        "ok": False,
+        "mode": "validation",
+        "data_source": "production_runtime",
+        "view_model_success": False,
+        "caption_success": False,
+        "caption_length": 0,
+        "caption_hash": "",
+        "caption_checks": {},
+        "section_presence": {},
+        "render_success": False,
+        "image_validation": False,
+        "png_width": 0,
+        "png_height": 0,
+        "png_size_bytes": 0,
+        "cleanup_state": "not_started",
+        "market_regime": "",
+        "evidence_level": "",
+        "telegram_api_calls": 0,
+        "scheduler_ledger_mutations": 0,
+        "temporary_path_exists_after_cleanup": False,
+        "error_category": "",
+        "errors": [],
+    }
+    stage = "snapshot"
+    temp_directory: tempfile.TemporaryDirectory[str] | None = None
+    temp_root: Path | None = None
+    try:
+        generated_at = now_in_timezone(timezone_name)
+        snapshot = snapshot_builder(generated_at)
+
+        stage = "view_model"
+        memory = FionaMemory.load(output_dir / MEMORY_NAME)
+        engine = FionaAlertEngine(LifecycleManager(memory.event_memory))
+        events = [engine.process(event) for event in snapshot_to_events(snapshot, generated_at)]
+        narratives = memory.update_narratives(events, now=generated_at)
+        view_model = build_market_news_view_model(
+            snapshot,
+            events,
+            narratives,
+            generated_at=generated_at,
+        )
+        evidence, regime, _ = caption_intelligence(view_model)
+        result["view_model_success"] = True
+        result["market_regime"] = regime.regime.value
+        result["evidence_level"] = evidence.level.value
+
+        stage = "caption"
+        caption = compose_market_news_caption(view_model)
+        caption_checks = validate_market_news_caption(caption)
+        result["caption_length"] = len(caption)
+        result["caption_hash"] = hashlib.sha256(caption.encode("utf-8")).hexdigest()
+        result["caption_checks"] = caption_checks
+        result["section_presence"] = caption_checks["section_presence"]
+        result["caption_success"] = all(
+            value for key, value in caption_checks.items() if key != "section_presence"
+        ) and all(caption_checks["section_presence"].values())
+        if not result["caption_success"]:
+            raise ValueError("Caption RC validation failed")
+
+        stage = "temporary_file"
+        temp_directory = tempfile.TemporaryDirectory(prefix="fiona-market-news-validation-")
+        temp_root = Path(temp_directory.name)
+        output_path = temp_root / "fiona_market_news_validation.png"
+
+        stage = "renderer"
+        rendered_path = (renderer or render_with_pillow)(view_model, output_path)
+        result["render_success"] = True
+
+        stage = "image_validation"
+        validation = validate_market_news_png(rendered_path)
+        result["image_validation"] = True
+        result["png_width"] = validation.width
+        result["png_height"] = validation.height
+        result["png_size_bytes"] = validation.size_bytes
+    except Exception as exc:  # noqa: BLE001 - validation must return a safe machine-readable result.
+        result["error_category"] = f"{stage}_failed"
+        result["errors"].append(safe_error(exc))
+    finally:
+        if temp_directory is not None:
+            try:
+                temp_directory.cleanup()
+            except Exception as exc:  # noqa: BLE001 - cleanup failure is a failed release gate.
+                result["cleanup_state"] = "failed"
+                result["errors"].append(f"cleanup_failed: {safe_error(exc)}")
+            else:
+                result["cleanup_state"] = "success"
+        else:
+            result["cleanup_state"] = "not_required"
+        result["temporary_path_exists_after_cleanup"] = bool(temp_root and temp_root.exists())
+
+    result["ok"] = bool(
+        result["view_model_success"]
+        and result["caption_success"]
+        and result["render_success"]
+        and result["image_validation"]
+        and (result["png_width"], result["png_height"]) == EXPECTED_IMAGE_SIZE
+        and 0 < result["png_size_bytes"] < MAX_IMAGE_BYTES
+        and result["cleanup_state"] == "success"
+        and not result["temporary_path_exists_after_cleanup"]
+        and result["telegram_api_calls"] == 0
+        and result["scheduler_ledger_mutations"] == 0
+        and not result["errors"]
+    )
+    return result
+
+
+def validate_market_news_caption(caption: str) -> dict[str, Any]:
+    required_sections = (
+        "【Market Regime】",
+        "【What Changed】",
+        "【Fiona’s View】",
+        "【Watch Next】",
+    )
+    section_presence = {section: section in caption for section in required_sections}
+    hashtag_tokens = [token for token in caption.split() if token.startswith("#")]
+    valid_hashtags = [token for token in hashtag_tokens if re.fullmatch(r"#[A-Za-z0-9_]+", token)]
+    forbidden_terms = (
+        "买入",
+        "卖出",
+        "加仓",
+        "减仓",
+        "梭哈",
+        "抄底",
+        "逃顶",
+        "目标价",
+        "必涨",
+        "必跌",
+        "财富密码",
+        "精准预测",
+        "独家发现",
+        "千载难逢",
+        "牛市启动",
+    )
+    return {
+        "section_presence": section_presence,
+        "length_safe": 0 < len(caption) <= CAPTION_MAX_CHARS,
+        "hashtags_safe": (
+            len(hashtag_tokens) <= MAX_TAGS
+            and len(valid_hashtags) == len(hashtag_tokens)
+            and len({item.casefold() for item in valid_hashtags}) == len(valid_hashtags)
+        ),
+        "markup_safe": (
+            caption.count("【") == caption.count("】")
+            and re.search(r"<[^>]+>", caption) is None
+        ),
+        "language_safe": not any(term in caption for term in forbidden_terms),
+        "density_safe": caption.count("\n• ") <= 5,
+    }
 
 
 def build_brief(
@@ -924,6 +1120,10 @@ def parse_args() -> argparse.Namespace:
     subparsers = parser.add_subparsers(dest="command", required=True)
     subparsers.add_parser("run-once", help="Generate one Fiona cycle")
     subparsers.add_parser("run-scheduler", help="Run Fiona continuously for Railway production")
+    subparsers.add_parser(
+        "validate-market-news-image",
+        help="Validate the production Market News image pipeline without Telegram or scheduler state",
+    )
     return parser.parse_args()
 
 
@@ -945,6 +1145,13 @@ def first_runtime_env(*names: str) -> str:
 
 def main() -> None:
     args = parse_args()
+    if args.command == "validate-market-news-image":
+        validation = validate_market_news_image_runtime(
+            output_dir=args.output.expanduser(),
+            timezone_name=args.timezone,
+        )
+        print(json.dumps(validation, ensure_ascii=False, separators=(",", ":")), flush=True)
+        raise SystemExit(0 if validation["ok"] else 1)
     send = resolve_send(args.send)
     if args.command == "run-scheduler":
         run_scheduler(
