@@ -1,7 +1,7 @@
 # Fiona V3.1 Implementation Roadmap
 
-Version: Phase 0
-Status: Gate 0 APPROVED and closed; Gate 1 not started
+Version: V3.1-alpha.1
+Status: Gate 1 implemented; PASS WITH CONDITIONS; Gate 2 not started
 Owner: Wilson / Codex
 Updated: 2026-08-25
 
@@ -148,6 +148,16 @@ an unknown result is not retried. Code deploys with legacy defaults.
 
 Review iOS screenshots, Telegram-returned media metadata, language leakage,
 fallback behavior, full tests, documentation, and exact release boundary. Stop.
+
+### Current Result
+
+- Native `sendPhoto`, direct 1440 x 1800 render, media flag, centralized locale,
+  Market News `en-US`, fallback matrix, leakage guard, and validator are complete.
+- Automated Full/Missing/Stress and simulated iOS preview checks pass.
+- Conditions remaining: isolated real Telegram/iOS review, explicit activation
+  approval, and separately scoped migration of non-Market-News language surfaces.
+- Verdict: **PASS WITH CONDITIONS**.
+- Gate 2: **NOT STARTED**.
 
 ## 4. Gate/Wave 2 - Global Coverage Engine
 

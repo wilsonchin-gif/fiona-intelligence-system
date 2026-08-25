@@ -1,9 +1,44 @@
 # Fiona Version Changelog
 
-版本：V3.1.0 Planning
-状态：Gate 0 Closed; Production remains V3.0.0
+版本：V3.1-alpha.1
+状态：Gate 1 PASS WITH CONDITIONS; Production activation pending
 负责人：Wilson  
 更新时间：2026-08-25
+
+## V3.1-alpha.1 - Native Telegram Photo + American English
+
+日期：2026-08-25
+
+Commit：待 Gate 1 精确边界提交后由 Git 历史确认
+
+影响范围：Market News Transport / iOS Renderer / Locale Boundary / Tests / Documentation
+
+### 新增内容
+
+- 新增 `FIONA_TELEGRAM_MEDIA_MODE=document|photo`，默认 `document`。
+- 新增 `FIONA_OUTPUT_LOCALE=zh-CN|en-US`，默认 `zh-CN`。
+- 新增 production-grade `sendPhoto`、1440 x 1800 原生 Pillow profile、短 Caption、CJK leakage guard 与来源 provenance sidecar。
+- 新增 photo definite/unknown delivery 分类、一次 text fallback、结构化 observability 与 production-safe validator。
+
+### 修复内容
+
+- 补齐原有 photo helper 缺少 Caption、错误分类、未知交付保护和 message ID 验证的问题。
+- 保护 photo timeout、5xx、network 与 malformed response，避免不确定状态触发重复发送。
+
+### 优化内容
+
+- Market News 的确定性用户文案、时间、缺失状态、Disclaimer 与 Caption 统一通过 locale boundary。
+- iOS profile 提高像素清晰度与安全边距，不增加信息密度，不放大旧图。
+
+### 删除内容
+
+- 未删除生产代码、任务、来源、ledger 或 Telegram document 能力。
+
+### 影响范围
+
+- 默认生产行为不变：`document + zh-CN`。
+- Scheduler、cadence、Railway Variables、source coverage、Morning、Evening、Daily、Weekly 与 Alert 均未改变。
+- `photo + en-US` 需要独立 Product Review 后才能激活；Gate 2 未开始。
 
 ## V3.1.0 Phase 0 - Gate 0 Closeout
 

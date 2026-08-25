@@ -27,13 +27,15 @@ from app.fiona_classifier import render_alert
 from app.fiona_engine import FionaAlertEngine
 from app.fiona_lifecycle import LifecycleManager
 from app.fiona_market_news_delivery import (
-    EXPECTED_IMAGE_SIZE,
     MAX_IMAGE_BYTES,
     MarketNewsDeliveryCoordinator,
     MarketNewsMode,
+    TelegramMediaMode,
+    expected_image_size,
     market_news_mode_from_env,
-    render_with_pillow,
+    render_for_media,
     safe_error,
+    telegram_media_mode_from_env,
     validate_market_news_png,
 )
 from app.fiona_market_news_image import (
@@ -42,6 +44,14 @@ from app.fiona_market_news_image import (
     build_market_news_view_model,
     caption_intelligence,
     compose_market_news_caption,
+    compose_market_news_fallback_text,
+    compose_safe_en_us_market_news_fallback,
+)
+from app.fiona_locale import (
+    OutputLocale,
+    contains_cjk,
+    output_locale_from_env,
+    parse_output_locale,
 )
 from app.fiona_memory import DecisionMemoryRecord, FionaMemory
 from app.fiona_narrative import NarrativeEngine
@@ -71,6 +81,7 @@ from app.fiona_types import EventCategory, FionaEvent, MarketDirection, PushDeci
 from app.telegram_service import (
     send_document_with_caption as telegram_send_document,
     send_message as telegram_send_message,
+    send_photo_with_caption as telegram_send_photo,
 )
 from app.wilson import (
     DEFAULT_TIMEZONE,
@@ -146,16 +157,40 @@ def run_once(
     }
 
     snapshot: dict[str, Any] | None = None
+    market_news_mode: MarketNewsMode | None = None
+    telegram_media_mode = TelegramMediaMode.DOCUMENT
+    output_locale = OutputLocale.ZH_CN
+    localized_market_news_view_model: Any | None = None
+    telegram_text_override: str | None = None
     try:
         snapshot = snapshot_builder(generated_at)
         payload = build_payload(snapshot, generated_at, memory_path, brief)
-        write_payload(latest_dir, archive_dir, payload, status)
-        market_news_mode: MarketNewsMode | None = None
         if payload.brief is not None and payload.brief.kind == FionaBriefKind.MARKET_NEWS:
+            warning_logger = lambda item: append_runtime_log(log_path, item)
             market_news_mode = market_news_mode_from_env(
-                warning_logger=lambda item: append_runtime_log(log_path, item)
+                warning_logger=warning_logger
             )
+            telegram_media_mode = telegram_media_mode_from_env(warning_logger=warning_logger)
+            output_locale = output_locale_from_env(warning_logger=warning_logger)
             status["market_news_mode"] = market_news_mode.value
+            status["telegram_media_mode"] = telegram_media_mode.value
+            status["output_locale"] = output_locale.value
+            if output_locale == OutputLocale.EN_US:
+                localized_market_news_view_model = build_market_news_view_model(
+                    payload.snapshot,
+                    payload.events,
+                    payload.narratives,
+                    generated_at=generated_at,
+                    output_locale=output_locale,
+                )
+                telegram_text_override = compose_market_news_fallback_text(localized_market_news_view_model)
+        write_payload(
+            latest_dir,
+            archive_dir,
+            payload,
+            status,
+            telegram_text_override=telegram_text_override,
+        )
         if send and should_push_alerts(brief):
             status["alerts"]["pushed"] = push_alerts(payload.alert_messages, log_path)
         if send and payload.brief is not None:
@@ -166,6 +201,10 @@ def run_once(
                     mode=market_news_mode or MarketNewsMode.TEXT,
                     generated_at=generated_at,
                     status=status,
+                    media_mode=telegram_media_mode,
+                    output_locale=output_locale,
+                    prebuilt_view_model=localized_market_news_view_model,
+                    text_override=telegram_text_override,
                 )
             else:
                 status["brief_push"] = push_text(payload.brief.render_text(), log_path, scope=payload.brief.title)
@@ -174,7 +213,11 @@ def run_once(
         status["errors"].append(str(exc))
         append_runtime_log(log_path, {"event": "fionaRuntimeError", "ok": False, "error": str(exc)})
         if fallback_to_wilson and snapshot is not None:
-            fallback_text = render_wilson_markdown(snapshot)
+            fallback_text = (
+                compose_safe_en_us_market_news_fallback(generated_at)
+                if output_locale == OutputLocale.EN_US
+                else render_wilson_markdown(snapshot)
+            )
             for base in (latest_dir, archive_dir):
                 (base / "fiona_fallback_telegram.md").write_text(fallback_text, encoding="utf-8")
             fallback_status: dict[str, Any] = {"used": True, "markdown": str(latest_dir / "fiona_fallback_telegram.md")}
@@ -495,10 +538,14 @@ def validate_market_news_image_runtime(
     timezone_name: str = DEFAULT_TIMEZONE,
     snapshot_builder: Callable[[datetime], dict[str, Any]] = build_snapshot,
     renderer: Callable[[Any, str | Path], Path] | None = None,
+    media_mode: TelegramMediaMode = TelegramMediaMode.PHOTO,
+    output_locale: OutputLocale = OutputLocale.EN_US,
 ) -> dict[str, Any]:
     result: dict[str, Any] = {
         "ok": False,
         "mode": "validation",
+        "media_mode": media_mode.value,
+        "output_locale": output_locale.value,
         "data_source": "production_runtime",
         "view_model_success": False,
         "caption_success": False,
@@ -517,6 +564,7 @@ def validate_market_news_image_runtime(
         "telegram_api_calls": 0,
         "scheduler_ledger_mutations": 0,
         "temporary_path_exists_after_cleanup": False,
+        "cjk_leakage": False,
         "error_category": "",
         "errors": [],
     }
@@ -537,6 +585,7 @@ def validate_market_news_image_runtime(
             events,
             narratives,
             generated_at=generated_at,
+            output_locale=output_locale,
         )
         evidence, regime, _ = caption_intelligence(view_model)
         result["view_model_success"] = True
@@ -545,11 +594,12 @@ def validate_market_news_image_runtime(
 
         stage = "caption"
         caption = compose_market_news_caption(view_model)
-        caption_checks = validate_market_news_caption(caption)
+        caption_checks = validate_market_news_caption(caption, output_locale=output_locale)
         result["caption_length"] = len(caption)
         result["caption_hash"] = hashlib.sha256(caption.encode("utf-8")).hexdigest()
         result["caption_checks"] = caption_checks
         result["section_presence"] = caption_checks["section_presence"]
+        result["cjk_leakage"] = contains_cjk(caption)
         result["caption_success"] = all(
             value for key, value in caption_checks.items() if key != "section_presence"
         ) and all(caption_checks["section_presence"].values())
@@ -562,11 +612,18 @@ def validate_market_news_image_runtime(
         output_path = temp_root / "fiona_market_news_validation.png"
 
         stage = "renderer"
-        rendered_path = (renderer or render_with_pillow)(view_model, output_path)
+        rendered_path = (
+            renderer(view_model, output_path)
+            if renderer is not None
+            else render_for_media(view_model, output_path, media_mode)
+        )
         result["render_success"] = True
 
         stage = "image_validation"
-        validation = validate_market_news_png(rendered_path)
+        validation = validate_market_news_png(
+            rendered_path,
+            expected_size=expected_image_size(media_mode),
+        )
         result["image_validation"] = True
         result["png_width"] = validation.width
         result["png_height"] = validation.height
@@ -592,18 +649,46 @@ def validate_market_news_image_runtime(
         and result["caption_success"]
         and result["render_success"]
         and result["image_validation"]
-        and (result["png_width"], result["png_height"]) == EXPECTED_IMAGE_SIZE
+        and (result["png_width"], result["png_height"]) == expected_image_size(media_mode)
         and 0 < result["png_size_bytes"] < MAX_IMAGE_BYTES
         and result["cleanup_state"] == "success"
         and not result["temporary_path_exists_after_cleanup"]
         and result["telegram_api_calls"] == 0
         and result["scheduler_ledger_mutations"] == 0
+        and not result["cjk_leakage"]
         and not result["errors"]
     )
     return result
 
 
-def validate_market_news_caption(caption: str) -> dict[str, Any]:
+def validate_market_news_caption(
+    caption: str,
+    *,
+    output_locale: OutputLocale | str = OutputLocale.ZH_CN,
+) -> dict[str, Any]:
+    locale = output_locale if isinstance(output_locale, OutputLocale) else parse_output_locale(output_locale)
+    if locale == OutputLocale.EN_US:
+        required_sections = (
+            "Fiona Global Intelligence",
+            "Market state:",
+            "Fiona's view:",
+            "Watch next:",
+        )
+        section_presence = {section: section in caption for section in required_sections}
+        hashtag_tokens = [token for token in caption.split() if token.startswith("#")]
+        valid_hashtags = [token for token in hashtag_tokens if re.fullmatch(r"#[A-Za-z0-9_]+", token)]
+        return {
+            "section_presence": section_presence,
+            "length_safe": 180 <= len(caption) <= 450,
+            "hashtags_safe": (
+                len(hashtag_tokens) <= 4
+                and len(valid_hashtags) == len(hashtag_tokens)
+                and len({item.casefold() for item in valid_hashtags}) == len(valid_hashtags)
+            ),
+            "markup_safe": re.search(r"<[^>]+>", caption) is None,
+            "language_safe": not contains_cjk(caption),
+            "density_safe": caption.count("\n") <= 9,
+        }
     required_sections = (
         "【Market Regime】",
         "【What Changed】",
@@ -878,7 +963,14 @@ def rwa_relevant_lines(lines: list[str]) -> list[str]:
     return [line for line in lines if contains_any([line], keywords)]
 
 
-def write_payload(latest_dir: Path, archive_dir: Path, payload: FionaPayload, status: dict[str, Any]) -> None:
+def write_payload(
+    latest_dir: Path,
+    archive_dir: Path,
+    payload: FionaPayload,
+    status: dict[str, Any],
+    *,
+    telegram_text_override: str | None = None,
+) -> None:
     for base in (latest_dir, archive_dir):
         base.mkdir(parents=True, exist_ok=True)
         (base / "fiona_snapshot.json").write_text(json.dumps(payload.snapshot, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -892,7 +984,8 @@ def write_payload(latest_dir: Path, archive_dir: Path, payload: FionaPayload, st
         else:
             (base / "fiona_alerts.md").unlink(missing_ok=True)
         if payload.brief is not None:
-            (base / "fiona_telegram.md").write_text(payload.brief.render_text(), encoding="utf-8")
+            telegram_text = telegram_text_override or payload.brief.render_text()
+            (base / "fiona_telegram.md").write_text(telegram_text, encoding="utf-8")
         else:
             (base / "fiona_telegram.md").unlink(missing_ok=True)
     status["alerts"]["count"] = len(payload.alert_messages)
@@ -921,27 +1014,46 @@ def push_market_news(
     mode: MarketNewsMode,
     generated_at: datetime,
     status: dict[str, Any],
+    media_mode: TelegramMediaMode = TelegramMediaMode.DOCUMENT,
+    output_locale: OutputLocale = OutputLocale.ZH_CN,
+    prebuilt_view_model: Any | None = None,
+    text_override: str | None = None,
 ) -> dict[str, Any]:
     if payload.brief is None:
         raise ValueError("Market News delivery requires a generated brief.")
-    legacy_text = payload.brief.render_text()
+    view_model_cache: dict[str, Any] = {}
+    if prebuilt_view_model is not None:
+        view_model_cache["value"] = prebuilt_view_model
+
+    def view_model_factory() -> Any:
+        if "value" not in view_model_cache:
+            view_model_cache["value"] = build_market_news_view_model(
+                payload.snapshot,
+                payload.events,
+                payload.narratives,
+                generated_at=generated_at,
+                output_locale=output_locale,
+            )
+        return view_model_cache["value"]
+
+    legacy_text = text_override or payload.brief.render_text()
+    if output_locale == OutputLocale.EN_US and text_override is None:
+        legacy_text = compose_market_news_fallback_text(view_model_factory())
     if mode == MarketNewsMode.TEXT:
         return push_text(legacy_text, log_path, scope=payload.brief.title)
 
     coordinator = MarketNewsDeliveryCoordinator(
         text_sender=lambda text: push_text(text, log_path, scope=payload.brief.title),
         document_sender=telegram_send_document,
+        photo_sender=telegram_send_photo,
         logger=lambda item: append_runtime_log(log_path, item),
     )
     delivery = coordinator.deliver(
         mode=mode,
         legacy_text=legacy_text,
-        view_model_factory=lambda: build_market_news_view_model(
-            payload.snapshot,
-            payload.events,
-            payload.narratives,
-            generated_at=generated_at,
-        ),
+        view_model_factory=view_model_factory,
+        media_mode=media_mode,
+        output_locale=output_locale.value,
     )
     status["market_news_delivery"] = delivery.to_dict()
     return delivery.push_result

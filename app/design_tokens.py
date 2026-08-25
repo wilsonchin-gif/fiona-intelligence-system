@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, fields
 from types import MappingProxyType
 from typing import Mapping
 
@@ -31,6 +31,9 @@ class CanvasTokens:
     color_mode: str = "RGB"
     output_format: str = "PNG"
     max_file_size_bytes: int = 1_500_000
+    safe_top: int = 24
+    safe_bottom: int = 24
+    minimum_text_size: int = 13
 
 
 @dataclass(frozen=True)
@@ -211,6 +214,58 @@ FIONA_TOKENS = FionaDesignTokens(
     surfaces=SurfaceTokens(),
     footer=FooterStyleTokens(),
     regions=REGIONS,
+)
+
+
+IOS_SCALE = 4 / 3
+
+
+def scale_integer_tokens(instance: object, scale: float, **overrides: object) -> object:
+    values: dict[str, object] = {}
+    for item in fields(instance):
+        value = getattr(instance, item.name)
+        values[item.name] = round(value * scale) if isinstance(value, int) and not isinstance(value, bool) else value
+    values.update(overrides)
+    return type(instance)(**values)
+
+
+IOS_REGIONS: Mapping[str, Region] = MappingProxyType(
+    {
+        name: Region(
+            0,
+            round(region.top * IOS_SCALE),
+            1440,
+            round(region.bottom * IOS_SCALE),
+        )
+        for name, region in REGIONS.items()
+    }
+)
+
+
+FIONA_IOS_TOKENS = FionaDesignTokens(
+    version="1.1.0-ios",
+    canvas=CanvasTokens(
+        width=1440,
+        height=1800,
+        color_mode="RGB",
+        output_format="PNG",
+        max_file_size_bytes=1_500_000,
+        safe_top=48,
+        safe_bottom=48,
+        minimum_text_size=17,
+    ),
+    colors=ColorTokens(),
+    typography=scale_integer_tokens(TypographyTokens(), IOS_SCALE),  # type: ignore[arg-type]
+    spacing=scale_integer_tokens(SpacingTokens(), IOS_SCALE, outer_margin=72),  # type: ignore[arg-type]
+    radius=scale_integer_tokens(RadiusTokens(), IOS_SCALE),  # type: ignore[arg-type]
+    border=scale_integer_tokens(BorderTokens(), IOS_SCALE),  # type: ignore[arg-type]
+    shadow=ShadowTokens(),
+    icon_size=scale_integer_tokens(IconSizeTokens(), IOS_SCALE),  # type: ignore[arg-type]
+    section_gap=round(SpacingTokens().section_gap * IOS_SCALE),
+    grid=GridTokens(gutter=round(GridTokens().gutter * IOS_SCALE)),
+    surfaces=SurfaceTokens(),
+    footer=FooterStyleTokens(),
+    regions=IOS_REGIONS,
 )
 
 

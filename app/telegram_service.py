@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import socket
 import urllib.error
 import urllib.parse
@@ -51,13 +52,29 @@ def send_message(text: str) -> dict[str, Any]:
 
 def send_photo(image_path: str | Path) -> dict[str, Any]:
     """Send a PNG/JPEG image to Telegram as a compressed photo."""
+    return send_photo_with_caption(image_path)
+
+
+def send_photo_with_caption(
+    image_path: str | Path,
+    caption: str = "",
+    parse_mode: str | None = None,
+) -> dict[str, Any]:
+    """Send a native Telegram photo with classified delivery semantics."""
     path = Path(image_path).expanduser()
     if not path.exists():
         raise FileNotFoundError(f"Image not found: {path}")
 
     config = telegram_config()
-    data, content_type = multipart_form_data({"chat_id": config["chat_id"]}, {"photo": path})
-    return telegram_request(config["bot_token"], "sendPhoto", data, content_type)
+    fields = {"chat_id": config["chat_id"]}
+    safe_caption = normalize_caption(caption)
+    if safe_caption:
+        fields["caption"] = safe_caption
+    safe_parse_mode = str(parse_mode or "").strip()
+    if safe_parse_mode:
+        fields["parse_mode"] = safe_parse_mode
+    data, content_type = multipart_form_data(fields, {"photo": path})
+    return telegram_photo_request(config["bot_token"], "sendPhoto", data, content_type)
 
 
 def send_document(document_path: str | Path) -> dict[str, Any]:
@@ -150,6 +167,38 @@ def telegram_document_request(
     data: bytes,
     content_type: str,
 ) -> dict[str, Any]:
+    return telegram_classified_request(
+        bot_token,
+        method,
+        data,
+        content_type,
+        server_error_is_unknown=False,
+    )
+
+
+def telegram_photo_request(
+    bot_token: str,
+    method: str,
+    data: bytes,
+    content_type: str,
+) -> dict[str, Any]:
+    return telegram_classified_request(
+        bot_token,
+        method,
+        data,
+        content_type,
+        server_error_is_unknown=True,
+    )
+
+
+def telegram_classified_request(
+    bot_token: str,
+    method: str,
+    data: bytes,
+    content_type: str,
+    *,
+    server_error_is_unknown: bool,
+) -> dict[str, Any]:
     url = f"https://api.telegram.org/bot{bot_token}/{method}"
     request = urllib.request.Request(
         url,
@@ -160,6 +209,11 @@ def telegram_document_request(
         with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
             raw_body = response.read().decode("utf-8", "ignore")
     except urllib.error.HTTPError as exc:
+        if server_error_is_unknown and exc.code >= 500:
+            raise TelegramUnknownDeliveryError(
+                "Telegram server returned an ambiguous error; delivery state is unknown",
+                category="telegram_server_error",
+            ) from exc
         raise TelegramRequestError(
             f"Telegram API HTTP error {exc.code}",
             category="telegram_http_error",
@@ -194,7 +248,9 @@ def telegram_document_request(
             category="telegram_response_parse_error",
         )
     if not body.get("ok"):
-        description = str(body.get("description") or "Telegram API rejected the request")
+        description = sanitize_telegram_description(
+            str(body.get("description") or "Telegram API rejected the request")
+        )
         raise TelegramRequestError(
             description,
             category="telegram_api_rejected",
@@ -257,3 +313,14 @@ def safe_int(value: Any) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def sanitize_telegram_description(value: str) -> str:
+    clean = str(value or "")
+    clean = re.sub(
+        r"https://api\.telegram\.org/bot[^/\s]+",
+        "[telegram-api]",
+        clean,
+        flags=re.IGNORECASE,
+    )
+    return re.sub(r"\bbot\d+:[A-Za-z0-9_-]+\b", "bot[redacted]", clean)

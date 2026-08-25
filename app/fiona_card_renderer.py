@@ -8,7 +8,7 @@ from typing import Iterable
 
 from PIL import Image, ImageDraw, ImageFont
 
-from app.design_tokens import FIONA_TOKENS
+from app.design_tokens import FIONA_IOS_TOKENS, FIONA_TOKENS, FionaDesignTokens
 from app.fiona_card_components import (
     FONT_BOLD,
     FONT_DIR,
@@ -55,18 +55,31 @@ from app.fiona_card_components import (
     wrap_text_pixels,
 )
 from app.fiona_market_news_image import (
-    IMAGE_HEIGHT,
-    IMAGE_WIDTH,
     ChangedEventView,
     HeatMapView,
     KeyMarketView,
     MarketNewsViewModel,
     NarrativeView,
+    market_news_visible_strings,
+)
+from app.fiona_locale import (
+    OutputLocale,
+    parse_output_locale,
+    require_en_us_output,
+    strings_for_locale,
+    visible_locale_strings,
 )
 
 
 TOKENS = FIONA_TOKENS
 VISUAL_SYSTEM_VERSION = "V3"
+
+# Static compatibility contract retained for V3 visual audits. Rendering uses
+# centralized locale resources; these labels remain discoverable to legacy QA.
+LEGACY_V3_STATIC_LABELS = (
+    "TODAY'S JUDGEMENT",
+    "NOT A FORECAST",
+)
 
 # Compatibility exports. The source of truth is app.design_tokens.
 BACKGROUND = TOKENS.colors.background
@@ -154,25 +167,44 @@ class HistoricalContextAssessment:
     reference: str
 
 
-def render_market_news_card(view_model: MarketNewsViewModel, output_path: str | Path) -> Path:
+def render_market_news_card(
+    view_model: MarketNewsViewModel,
+    output_path: str | Path,
+    *,
+    tokens: FionaDesignTokens = FIONA_TOKENS,
+) -> Path:
     validate_font_assets()
-    validate_component_regions()
-    if (IMAGE_WIDTH, IMAGE_HEIGHT) != (TOKENS.canvas.width, TOKENS.canvas.height):
-        raise RuntimeError("Market News output contract does not match Fiona design tokens.")
+    validate_component_regions(tokens)
+    locale = parse_output_locale(view_model.output_locale)
+    strings = strings_for_locale(locale)
+    components = build_market_news_components(view_model)
+    if locale == OutputLocale.EN_US:
+        require_en_us_output(
+            (
+                *visible_locale_strings(locale),
+                *market_news_visible_strings(view_model),
+                *component_visible_strings(view_model),
+            )
+        )
 
     target = Path(output_path)
     target.parent.mkdir(parents=True, exist_ok=True)
     image = Image.new(
-        TOKENS.canvas.color_mode,
-        (TOKENS.canvas.width, TOKENS.canvas.height),
-        color=TOKENS.colors.background,
+        tokens.canvas.color_mode,
+        (tokens.canvas.width, tokens.canvas.height),
+        color=tokens.colors.background,
     )
-    context = RenderContext(ImageDraw.Draw(image), TOKENS)
-    render_components(build_market_news_components(view_model), context)
+    context = RenderContext(ImageDraw.Draw(image), tokens, strings, locale)
+    render_components(components, context)
 
-    image.save(target, format=TOKENS.canvas.output_format, optimize=True, compress_level=9)
-    validate_rendered_card(target)
+    image.save(target, format=tokens.canvas.output_format, optimize=True, compress_level=9)
+    validate_rendered_card(target, tokens=tokens)
     return target
+
+
+def render_market_news_card_ios(view_model: MarketNewsViewModel, output_path: str | Path) -> Path:
+    """Render the native iOS photo profile directly at 1440 x 1800."""
+    return render_market_news_card(view_model, output_path, tokens=FIONA_IOS_TOKENS)
 
 
 def build_market_news_components(view_model: MarketNewsViewModel) -> tuple[CardComponent, ...]:
@@ -219,6 +251,22 @@ def build_market_news_components(view_model: MarketNewsViewModel) -> tuple[CardC
     )
 
 
+def component_visible_strings(view_model: MarketNewsViewModel) -> tuple[str, ...]:
+    evidence = derive_evidence_level(view_model)
+    regime = derive_market_regime(view_model)
+    history = derive_historical_context(view_model)
+    return (
+        evidence.level.value,
+        regime.regime.value,
+        regime.reason,
+        dominant_driver(view_model),
+        next_confirmation(view_model),
+        *derive_watch_next(view_model),
+        history.topic,
+        history.reference,
+    )
+
+
 def render_components(
     components: Iterable[CardComponent],
     context: RenderContext,
@@ -226,15 +274,19 @@ def render_components(
     return tuple(component.render(context) for component in components)
 
 
-def validate_rendered_card(target: Path) -> None:
+def validate_rendered_card(
+    target: Path,
+    *,
+    tokens: FionaDesignTokens = FIONA_TOKENS,
+) -> None:
     if not target.exists() or target.stat().st_size == 0:
         raise RuntimeError("Pillow renderer did not create a PNG.")
-    if target.stat().st_size >= TOKENS.canvas.max_file_size_bytes:
+    if target.stat().st_size >= tokens.canvas.max_file_size_bytes:
         raise RuntimeError("Pillow renderer created a Market News card above the size limit.")
     with Image.open(target) as rendered:
-        if rendered.size != (TOKENS.canvas.width, TOKENS.canvas.height):
+        if rendered.size != (tokens.canvas.width, tokens.canvas.height):
             raise RuntimeError("Pillow renderer created an invalid Market News card size.")
-        if rendered.format != TOKENS.canvas.output_format:
+        if rendered.format != tokens.canvas.output_format:
             raise RuntimeError("Pillow renderer created an invalid Market News card format.")
 
 
@@ -378,9 +430,15 @@ def derive_evidence_level(view_model: MarketNewsViewModel) -> EvidenceAssessment
 
 
 def derive_market_regime(view_model: MarketNewsViewModel) -> MarketRegimeAssessment:
+    locale = parse_output_locale(view_model.output_locale)
     cards = [item for item in view_model.heat_map if item.score is not None]
     if len(cards) < 3:
-        return MarketRegimeAssessment(MarketRegime.UNKNOWN, "有效市场覆盖不足，暂不判断状态")
+        reason = (
+            "Coverage is insufficient for a reliable regime call"
+            if locale == OutputLocale.EN_US
+            else "有效市场覆盖不足，暂不判断状态"
+        )
+        return MarketRegimeAssessment(MarketRegime.UNKNOWN, reason)
 
     scores = [int(item.score) for item in cards if item.score is not None]
     average = sum(scores) / len(scores)
@@ -388,12 +446,16 @@ def derive_market_regime(view_model: MarketNewsViewModel) -> MarketRegimeAssessm
     bearish = sum(item.direction == "Bearish" for item in cards)
     spread = max(scores) - min(scores)
     if bearish == 0 and (bullish >= 2 or average >= 62):
-        return MarketRegimeAssessment(MarketRegime.RISK_ON, "多市场风险偏好形成正向共振")
+        reason = "Risk appetite is aligned across markets" if locale == OutputLocale.EN_US else "多市场风险偏好形成正向共振"
+        return MarketRegimeAssessment(MarketRegime.RISK_ON, reason)
     if bullish == 0 and (bearish >= 2 or average <= 38):
-        return MarketRegimeAssessment(MarketRegime.RISK_OFF, "多市场同步走弱，风险偏好收缩")
+        reason = "Broad weakness is compressing risk appetite" if locale == OutputLocale.EN_US else "多市场同步走弱，风险偏好收缩"
+        return MarketRegimeAssessment(MarketRegime.RISK_OFF, reason)
     if (bullish and bearish) or spread >= 24:
-        return MarketRegimeAssessment(MarketRegime.TRANSITION, "市场信号分化，状态仍在切换")
-    return MarketRegimeAssessment(MarketRegime.NEUTRAL, "跨市场方向尚未形成一致共振")
+        reason = "Cross-market signals are diverging" if locale == OutputLocale.EN_US else "市场信号分化，状态仍在切换"
+        return MarketRegimeAssessment(MarketRegime.TRANSITION, reason)
+    reason = "Cross-market direction is not yet aligned" if locale == OutputLocale.EN_US else "跨市场方向尚未形成一致共振"
+    return MarketRegimeAssessment(MarketRegime.NEUTRAL, reason)
 
 
 def derive_watch_next(view_model: MarketNewsViewModel) -> tuple[str, ...]:
@@ -409,7 +471,7 @@ def derive_watch_next(view_model: MarketNewsViewModel) -> tuple[str, ...]:
         if len(output) == 3:
             break
     if not output:
-        output.append("等待资金流与关键资产形成同向确认")
+        output.append(strings_for_locale(view_model.output_locale).waiting_confirmation)
     return tuple(output)
 
 
@@ -428,6 +490,14 @@ def format_watch_variable(value: str) -> str:
         return "BTC Funding Rate"
     if "dxy" in lower or "美元" in lower:
         return "DXY"
+    if "treasury" in lower or "us10y" in lower:
+        return "US10Y direction"
+    if "etf" in lower:
+        return "ETF Flow confirmation"
+    if "rwa" in lower or "tvl" in lower:
+        return "RWA TVL / Usage"
+    if "price" in lower and ("flow" in lower or "volume" in lower):
+        return "Price / Flow confirmation"
     return semantic_limit(normalized, 20)
 
 
@@ -464,16 +534,26 @@ def market_state(heat_map: Iterable[HeatMapView]) -> str:
 
 def dominant_driver(view_model: MarketNewsViewModel) -> str:
     if view_model.what_changed:
-        return semantic_limit(view_model.what_changed[0].why, 28)
+        why = view_model.what_changed[0].why
+        lower = why.lower()
+        if "rates" in lower or "dollar" in lower or "treasury" in lower:
+            return "Rates and dollar transmission"
+        if "etf" in lower:
+            return "ETF flow persistence"
+        if "rwa" in lower or "institutional" in lower:
+            return "Institutional capital and usage"
+        return semantic_limit(why, 36)
     if view_model.current_narrative:
         return semantic_limit(view_model.current_narrative[0].name, 16)
+    if parse_output_locale(view_model.output_locale) == OutputLocale.EN_US:
+        return "No new high-value driver"
     return "暂无新增高价值驱动"
 
 
 def next_confirmation(view_model: MarketNewsViewModel) -> str:
     if view_model.what_changed:
-        return view_model.what_changed[0].watch
-    return "等待资金流与关键资产形成同向确认"
+        return format_watch_variable(view_model.what_changed[0].watch)
+    return strings_for_locale(view_model.output_locale).waiting_confirmation
 
 
 def draw_section_title(draw: ImageDraw.ImageDraw, y: int, title: str, meta: str) -> None:

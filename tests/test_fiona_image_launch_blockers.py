@@ -246,13 +246,15 @@ class FionaProductionImageValidationTest(unittest.TestCase):
     def run_validation(self, output: Path) -> dict[str, object]:
         with patch("app.fiona_runtime.telegram_send_message") as text_sender:
             with patch("app.fiona_runtime.telegram_send_document") as document_sender:
-                result = validate_market_news_image_runtime(
-                    output_dir=output,
-                    timezone_name="Asia/Hong_Kong",
-                    snapshot_builder=production_snapshot,
-                )
+                with patch("app.fiona_runtime.telegram_send_photo") as photo_sender:
+                    result = validate_market_news_image_runtime(
+                        output_dir=output,
+                        timezone_name="Asia/Hong_Kong",
+                        snapshot_builder=production_snapshot,
+                    )
         text_sender.assert_not_called()
         document_sender.assert_not_called()
+        photo_sender.assert_not_called()
         return result
 
     def test_validation_uses_caption_rc_and_valid_png_without_telegram(self) -> None:
@@ -261,7 +263,10 @@ class FionaProductionImageValidationTest(unittest.TestCase):
         self.assertTrue(result["ok"], result)
         self.assertTrue(result["caption_success"])
         self.assertTrue(all(result["section_presence"].values()))
-        self.assertEqual((result["png_width"], result["png_height"]), (1080, 1350))
+        self.assertEqual((result["png_width"], result["png_height"]), (1440, 1800))
+        self.assertEqual(result["media_mode"], "photo")
+        self.assertEqual(result["output_locale"], "en-US")
+        self.assertFalse(result["cjk_leakage"])
         self.assertLess(result["png_size_bytes"], 1_500_000)
         self.assertEqual(result["cleanup_state"], "success")
         self.assertEqual(result["telegram_api_calls"], 0)

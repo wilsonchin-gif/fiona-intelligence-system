@@ -11,6 +11,17 @@ from typing import Any, Callable, Iterable
 
 from app.fiona_briefing import sanitize_output
 from app.fiona_contracts import FionaTag, TagType
+from app.fiona_locale import (
+    OutputLocale,
+    contains_cjk,
+    english_event_projection,
+    english_narrative_name,
+    format_display_timestamp,
+    infer_source_language,
+    parse_output_locale,
+    require_en_us_output,
+    strings_for_locale,
+)
 from app.fiona_types import FionaEvent, NarrativeRecord, NarrativeStatus
 
 
@@ -26,6 +37,8 @@ MAX_TAGS = 8
 DISCLAIMER = "本内容仅供参考，不构成任何投资建议。投资有风险，入市需谨慎。"
 CAPTION_DISCLAIMER = "本内容仅供参考，不构成任何投资建议。"
 CAPTION_TIMEZONE = timezone(timedelta(hours=8))
+PHOTO_CAPTION_MIN_CHARS = 180
+PHOTO_CAPTION_MAX_CHARS = 450
 CAPTION_FORBIDDEN_REPLACEMENTS = {
     "重磅": "重要",
     "暴涨": "大幅上涨",
@@ -78,6 +91,15 @@ class DataQualityView:
 
 
 @dataclass(frozen=True)
+class SourceProvenanceView:
+    source_name: str
+    source_url: str | None
+    source_language: str
+    original_title: str
+    original_text: str
+
+
+@dataclass(frozen=True)
 class MarketNewsViewModel:
     generated_at: datetime
     heat_map: tuple[HeatMapView, ...]
@@ -88,6 +110,8 @@ class MarketNewsViewModel:
     tags: tuple[FionaTag, ...]
     data_quality: DataQualityView
     source_count: int = 0
+    output_locale: str = OutputLocale.ZH_CN.value
+    source_provenance: tuple[SourceProvenanceView, ...] = ()
 
     @property
     def telegram_hashtags(self) -> tuple[str, ...]:
@@ -108,20 +132,23 @@ def build_market_news_view_model(
     events: Iterable[FionaEvent],
     narratives: Iterable[NarrativeRecord],
     generated_at: datetime | None = None,
+    output_locale: OutputLocale | str = OutputLocale.ZH_CN,
 ) -> MarketNewsViewModel:
     source = snapshot if isinstance(snapshot, dict) else {}
     event_list = sorted(list(events), key=lambda item: item.intelligence_score, reverse=True)
     narrative_list = list(narratives)
+    locale = output_locale if isinstance(output_locale, OutputLocale) else parse_output_locale(output_locale)
     now = normalize_generated_at(source, generated_at)
-    heat_map = build_heat_map(source)
-    key_markets = build_key_markets(source, event_list)
-    what_changed = build_changed_events(event_list)
-    current_narrative = build_narrative_views(narrative_list)
-    fiona_view = build_fiona_view(source, event_list, current_narrative)
+    heat_map = build_heat_map(source, output_locale=locale)
+    key_markets = build_key_markets(source, event_list, output_locale=locale)
+    what_changed = build_changed_events(event_list, output_locale=locale)
+    current_narrative = build_narrative_views(narrative_list, output_locale=locale)
+    fiona_view = build_fiona_view(source, event_list, current_narrative, heat_map=heat_map, output_locale=locale)
     tags = build_market_news_tags(event_list, narrative_list)
     data_quality = assess_data_quality(source, heat_map, key_markets)
     source_count = count_data_sources(source, event_list)
-    return MarketNewsViewModel(
+    source_provenance = build_source_provenance(event_list)
+    view_model = MarketNewsViewModel(
         generated_at=now,
         heat_map=tuple(heat_map),
         key_markets=tuple(key_markets),
@@ -131,10 +158,16 @@ def build_market_news_view_model(
         tags=tuple(tags),
         data_quality=data_quality,
         source_count=source_count,
+        output_locale=locale.value,
+        source_provenance=tuple(source_provenance),
     )
+    validate_market_news_language(view_model)
+    return view_model
 
 
 def compose_market_news_caption(view_model: MarketNewsViewModel) -> str:
+    if parse_output_locale(view_model.output_locale) == OutputLocale.EN_US:
+        return compose_native_photo_caption_en_us(view_model)
     evidence, regime, watch_items = caption_intelligence(view_model)
     evidence_name = evidence.level.value
     regime_name = regime.regime.value
@@ -169,6 +202,92 @@ def compose_market_news_caption(view_model: MarketNewsViewModel) -> str:
         hashtags=hashtags,
     )
     return sanitize_caption_language(caption)
+
+
+def compose_native_photo_caption_en_us(view_model: MarketNewsViewModel) -> str:
+    from app.fiona_card_renderer import format_watch_variable
+
+    evidence, regime, watch_items = caption_intelligence(view_model)
+    strings = strings_for_locale(OutputLocale.EN_US)
+    timestamp = format_display_timestamp(view_model.generated_at, OutputLocale.EN_US)
+    source_label = "source" if evidence.source_count == 1 else "sources"
+    state = (
+        f"Market state: {regime.regime.value} · Evidence: {evidence.level.value} "
+        f"({evidence.source_count} {source_label})."
+    )
+    judgment = f"Fiona's view: {sentence_text(shorten_words(view_model.fiona_view, 132))}"
+    selected_watch = [format_watch_variable(item) for item in watch_items[:2]]
+    selected_watch = [item.rstrip(". ") for item in selected_watch if item.strip()]
+    watch = "Watch next: " + "; ".join(selected_watch or ["cross-market flow confirmation"]) + "."
+    hashtags = " ".join(select_caption_hashtags(view_model)[:4])
+    caption = "\n".join(
+        [
+            strings.caption_title,
+            timestamp,
+            "",
+            state,
+            judgment,
+            watch,
+            "",
+            hashtags,
+            strings.informational_disclaimer,
+        ]
+    ).strip()
+    caption = trim_en_us_caption(caption)
+    require_en_us_output((caption,))
+    return caption
+
+
+def compose_market_news_fallback_text(view_model: MarketNewsViewModel) -> str:
+    """Return a delivery-safe text artifact in the ViewModel output locale."""
+    return compose_market_news_caption(view_model)
+
+
+def compose_safe_en_us_market_news_fallback(generated_at: datetime) -> str:
+    strings = strings_for_locale(OutputLocale.EN_US)
+    return "\n".join(
+        (
+            strings.caption_title,
+            format_display_timestamp(generated_at, OutputLocale.EN_US),
+            "",
+            "Market state: Unavailable · Evidence: Limited.",
+            "Fiona's view: Current data did not pass the publication-quality validation boundary.",
+            "Watch next: restoration of verified market coverage.",
+            "",
+            strings.informational_disclaimer,
+        )
+    )
+
+
+def sentence_text(value: str) -> str:
+    clean = re.sub(r"\s+", " ", str(value or "")).strip()
+    if not clean:
+        return "Current evidence is not sufficient for a stronger market judgment."
+    return clean if clean.endswith((".", "!", "?")) else clean + "."
+
+
+def shorten_words(value: str, max_chars: int) -> str:
+    clean = re.sub(r"\s+", " ", str(value or "")).strip()
+    if len(clean) <= max_chars:
+        return clean
+    prefix = clean[:max_chars].rsplit(" ", 1)[0].rstrip(" ,;:")
+    return prefix or clean[:max_chars]
+
+
+def trim_en_us_caption(value: str) -> str:
+    clean = str(value or "").strip()
+    if len(clean) <= PHOTO_CAPTION_MAX_CHARS:
+        return clean
+    lines = clean.splitlines()
+    while len("\n".join(lines)) > PHOTO_CAPTION_MAX_CHARS and len(lines) > 6:
+        lines.pop(-3)
+    candidate = "\n".join(lines)
+    if len(candidate) <= PHOTO_CAPTION_MAX_CHARS:
+        return candidate
+    disclaimer = strings_for_locale(OutputLocale.EN_US).informational_disclaimer
+    prefix_limit = PHOTO_CAPTION_MAX_CHARS - len(disclaimer) - 2
+    prefix = candidate[:prefix_limit].rsplit(" ", 1)[0].rstrip(" ,;:")
+    return f"{prefix}.\n{disclaimer}"
 
 
 def caption_intelligence(view_model: MarketNewsViewModel) -> tuple[Any, Any, tuple[str, ...]]:
@@ -636,7 +755,13 @@ def read_png_dimensions(path: str | Path) -> tuple[int, int]:
     return struct.unpack(">II", header[16:24])
 
 
-def build_heat_map(snapshot: dict[str, Any]) -> list[HeatMapView]:
+def build_heat_map(
+    snapshot: dict[str, Any],
+    *,
+    output_locale: OutputLocale | str = OutputLocale.ZH_CN,
+) -> list[HeatMapView]:
+    locale = output_locale if isinstance(output_locale, OutputLocale) else parse_output_locale(output_locale)
+    strings = strings_for_locale(locale)
     expected = (
         ("us", "US Market"),
         ("china", "China Market"),
@@ -654,19 +779,39 @@ def build_heat_map(snapshot: dict[str, Any]) -> list[HeatMapView]:
     for key, label in expected:
         card = indexed.get(key, {})
         score = safe_int(card.get("score"))
+        direction = normalize_direction(card.get("status"), score)
+        raw_metric = str(card.get("summary") or "").strip()
+        if locale == OutputLocale.EN_US:
+            metric = (
+                raw_metric
+                if raw_metric and not contains_cjk(raw_metric)
+                else strings.data_unavailable
+                if score is None
+                else f"{direction}; score {score}/100"
+            )
+            display_label = label
+        else:
+            metric = raw_metric or strings.data_unavailable
+            display_label = str(card.get("label") or label)
         output.append(
             HeatMapView(
                 key=key,
-                label=str(card.get("label") or label),
+                label=display_label,
                 score=score,
-                direction=normalize_direction(card.get("status"), score),
-                key_metric=str(card.get("summary") or "数据暂缺"),
+                direction=direction,
+                key_metric=metric,
             )
         )
     return output
 
 
-def build_key_markets(snapshot: dict[str, Any], events: list[FionaEvent] | None = None) -> list[KeyMarketView]:
+def build_key_markets(
+    snapshot: dict[str, Any],
+    events: list[FionaEvent] | None = None,
+    *,
+    output_locale: OutputLocale | str = OutputLocale.ZH_CN,
+) -> list[KeyMarketView]:
+    locale = output_locale if isinstance(output_locale, OutputLocale) else parse_output_locale(output_locale)
     us = dict_or_empty(snapshot.get("us_market"))
     crypto = dict_or_empty(snapshot.get("crypto_market"))
     rwa = dict_or_empty(snapshot.get("rwa_market"))
@@ -679,20 +824,25 @@ def build_key_markets(snapshot: dict[str, Any], events: list[FionaEvent] | None 
     hsi = find_quote(daily.get("quotes"), {"HSI", "^HSI"})
     rwa_tvl = dict_or_empty(rwa.get("tvl"))
     structural = [
-        market_item("btc", "BTC", first_number(btc, "current_price", "price"), first_number(btc, "change_pct", "price_change_percentage_24h"), usd=True),
-        market_item("spx", "S&P 500", first_number(spx, "price", "current_price"), first_number(spx, "change_pct", "price_change_percentage_24h")),
-        market_item("us10y", "US10Y", first_number(us10y, "price", "current_price"), first_number(us10y, "change_pct", "price_change_percentage_24h"), suffix="%"),
-        market_item("gold", "Gold", first_number(gold, "price", "current_price"), first_number(gold, "change_pct", "price_change_percentage_24h"), usd=True),
+        market_item("btc", "BTC", first_number(btc, "current_price", "price"), first_number(btc, "change_pct", "price_change_percentage_24h"), usd=True, output_locale=locale),
+        market_item("spx", "S&P 500", first_number(spx, "price", "current_price"), first_number(spx, "change_pct", "price_change_percentage_24h"), output_locale=locale),
+        market_item("us10y", "US10Y", first_number(us10y, "price", "current_price"), first_number(us10y, "change_pct", "price_change_percentage_24h"), suffix="%", output_locale=locale),
+        market_item("gold", "Gold", first_number(gold, "price", "current_price"), first_number(gold, "change_pct", "price_change_percentage_24h"), usd=True, output_locale=locale),
     ]
     dynamic_options = {
-        "eth": market_item("eth", "ETH", first_number(eth, "current_price", "price"), first_number(eth, "change_pct", "price_change_percentage_24h"), usd=True),
-        "hsi": market_item("hsi", "HSI", first_number(hsi, "price", "current_price"), first_number(hsi, "change_pct", "price_change_percentage_24h")),
-        "rwa": market_item("rwa", "RWA TVL", first_number(rwa_tvl, "value", "current"), first_number(rwa_tvl, "change_1d", "change_24h"), usd=True, compact=True),
+        "eth": market_item("eth", "ETH", first_number(eth, "current_price", "price"), first_number(eth, "change_pct", "price_change_percentage_24h"), usd=True, output_locale=locale),
+        "hsi": market_item("hsi", "HSI", first_number(hsi, "price", "current_price"), first_number(hsi, "change_pct", "price_change_percentage_24h"), output_locale=locale),
+        "rwa": market_item("rwa", "RWA TVL", first_number(rwa_tvl, "value", "current"), first_number(rwa_tvl, "change_1d", "change_24h"), usd=True, compact=True, output_locale=locale),
     }
     return [*structural, select_dynamic_market(events or [], dynamic_options)]
 
 
-def build_changed_events(events: list[FionaEvent]) -> list[ChangedEventView]:
+def build_changed_events(
+    events: list[FionaEvent],
+    *,
+    output_locale: OutputLocale | str = OutputLocale.ZH_CN,
+) -> list[ChangedEventView]:
+    locale = output_locale if isinstance(output_locale, OutputLocale) else parse_output_locale(output_locale)
     output: list[ChangedEventView] = []
     seen: set[str] = set()
     for event in events:
@@ -700,19 +850,24 @@ def build_changed_events(events: list[FionaEvent]) -> list[ChangedEventView]:
         if not key or key in seen:
             continue
         seen.add(key)
-        output.append(
-            ChangedEventView(
-                event=sanitize_output(event.what_happened),
-                why=sanitize_output(event.why_important),
-                watch=sanitize_output(event.watch_next[0] if event.watch_next else "等待下一轮数据确认"),
-            )
-        )
+        if locale == OutputLocale.EN_US:
+            what, why, watch = english_event_projection(event)
+        else:
+            what = sanitize_output(event.what_happened)
+            why = sanitize_output(event.why_important)
+            watch = sanitize_output(event.watch_next[0] if event.watch_next else "等待下一轮数据确认")
+        output.append(ChangedEventView(event=what, why=why, watch=watch))
         if len(output) == 3:
             break
     return output
 
 
-def build_narrative_views(narratives: list[NarrativeRecord]) -> list[NarrativeView]:
+def build_narrative_views(
+    narratives: list[NarrativeRecord],
+    *,
+    output_locale: OutputLocale | str = OutputLocale.ZH_CN,
+) -> list[NarrativeView]:
+    locale = output_locale if isinstance(output_locale, OutputLocale) else parse_output_locale(output_locale)
     selected = [item for item in narratives if item.status == NarrativeStatus.CURRENT]
     if not selected:
         selected = [item for item in narratives if item.status == NarrativeStatus.EMERGING]
@@ -720,7 +875,11 @@ def build_narrative_views(narratives: list[NarrativeRecord]) -> list[NarrativeVi
         selected = narratives[:1]
     return [
         NarrativeView(
-            name=item.name,
+            name=(
+                english_narrative_name(item.narrative_id, item.name, item.category)
+                if locale == OutputLocale.EN_US
+                else item.name
+            ),
             direction=item.direction.value,
             confidence=safe_int(item.confidence_score),
         )
@@ -732,7 +891,23 @@ def build_fiona_view(
     snapshot: dict[str, Any],
     events: list[FionaEvent],
     narratives: list[NarrativeView],
+    *,
+    heat_map: list[HeatMapView] | None = None,
+    output_locale: OutputLocale | str = OutputLocale.ZH_CN,
 ) -> str:
+    locale = output_locale if isinstance(output_locale, OutputLocale) else parse_output_locale(output_locale)
+    if locale == OutputLocale.EN_US:
+        available = [item for item in (heat_map or []) if item.score is not None]
+        if len(available) < 2:
+            return "Evidence remains limited, so Fiona is withholding a stronger regime call. The next confirmation must come from broader market coverage and aligned flows."
+        strongest = max(available, key=lambda item: item.score or 0)
+        weakest = min(available, key=lambda item: item.score or 0)
+        if strongest.key == weakest.key:
+            return f"{strongest.label} is the clearest available signal, but cross-market confirmation remains incomplete. Fiona is waiting for flows and key assets to align."
+        return (
+            f"{strongest.label} is relatively stronger while {weakest.label} remains weaker. "
+            "Fiona sees a fragmented market and is waiting for liquidity, flows, and key assets to confirm one direction."
+        )
     raw = str(snapshot.get("wilson_view") or "").replace("Wilson", "Fiona").strip()
     if raw:
         return compact_text(sanitize_output(raw), 170)
@@ -741,6 +916,46 @@ def build_fiona_view(
     if events:
         return "过去4小时出现新的市场信号，但主线仍未收敛。Fiona更关注资金流、宏观变量与关键资产是否形成跨市场共振。"
     return "当前没有新增高价值变化，市场仍在等待更清晰的资金与风险偏好信号。下一轮重点验证关键资产是否出现同向变化。"
+
+
+def build_source_provenance(events: Iterable[FionaEvent]) -> list[SourceProvenanceView]:
+    output: list[SourceProvenanceView] = []
+    for event in events:
+        raw = event.raw_data if isinstance(event.raw_data, dict) else {}
+        source_url = first_nonempty(raw, "source_url", "url", "link")
+        original_title = str(raw.get("original_title") or event.title or "").strip()
+        original_text = str(raw.get("original_text") or raw.get("snippet") or event.what_happened or "").strip()
+        source_language = str(raw.get("source_language") or infer_source_language(original_text)).strip()
+        output.append(
+            SourceProvenanceView(
+                source_name=str(raw.get("source_name") or event.source or "unknown").strip(),
+                source_url=source_url,
+                source_language=source_language,
+                original_title=original_title,
+                original_text=original_text,
+            )
+        )
+    return output
+
+
+def market_news_visible_strings(view_model: MarketNewsViewModel) -> tuple[str, ...]:
+    values: list[str] = [view_model.fiona_view, view_model.output_locale]
+    for item in view_model.heat_map:
+        values.extend((item.label, item.direction, item.key_metric))
+    for item in view_model.key_markets:
+        values.extend((item.label, item.value, item.change))
+    for item in view_model.what_changed:
+        values.extend((item.event, item.why, item.watch))
+    for item in view_model.current_narrative:
+        values.extend((item.name, item.direction))
+    for item in view_model.tags:
+        values.extend((item.display_name, item.telegram_hashtag))
+    return tuple(values)
+
+
+def validate_market_news_language(view_model: MarketNewsViewModel) -> None:
+    if parse_output_locale(view_model.output_locale) == OutputLocale.EN_US:
+        require_en_us_output(market_news_visible_strings(view_model))
 
 
 def build_market_news_tags(
@@ -878,6 +1093,7 @@ def market_item(
     usd: bool = False,
     compact: bool = False,
     suffix: str = "",
+    output_locale: OutputLocale | str = OutputLocale.ZH_CN,
 ) -> KeyMarketView:
     if value is None:
         display = "—"
@@ -887,8 +1103,16 @@ def market_item(
         display = f"${value:,.0f}" if value >= 100 else f"${value:,.2f}"
     else:
         display = f"{value:,.2f}{suffix}"
-    change_text = "数据暂缺" if change is None else f"{change:+.2f}%"
+    change_text = strings_for_locale(output_locale).data_unavailable if change is None else f"{change:+.2f}%"
     return KeyMarketView(key=key, label=label, value=display, change=change_text)
+
+
+def first_nonempty(value: dict[str, Any], *keys: str) -> str | None:
+    for key in keys:
+        candidate = str(value.get(key) or "").strip()
+        if candidate:
+            return candidate
+    return None
 
 
 def select_dynamic_market(events: list[FionaEvent], options: dict[str, KeyMarketView]) -> KeyMarketView:

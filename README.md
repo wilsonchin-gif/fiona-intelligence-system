@@ -17,7 +17,7 @@ Fiona does not provide investment advice, price targets, or trading instructions
 - Production: Fiona V3.0.0 Design System 1.0 (`a8678b0`)
 - Railway delivery: Market News `image` mode
 - Fiona V3.1 Global 4H Intelligence: Gate 0 closed on 2026-08-25
-- Gate 1 implementation: not started
+- Gate 1 alpha implementation: `PASS WITH CONDITIONS`; production activation pending
 
 ## Production Runtime
 
@@ -102,6 +102,8 @@ WILSON_INTERVAL_MINUTES=5
 FIONA_ALERT_ENABLED=0
 FIONA_ALERT_DRY_RUN=1
 FIONA_MARKET_NEWS_MODE=image
+FIONA_TELEGRAM_MEDIA_MODE=document
+FIONA_OUTPUT_LOCALE=zh-CN
 ```
 
 Send switch priority:
@@ -130,6 +132,22 @@ FIONA_MARKET_NEWS_MODE=image
 
 Invalid values are logged and safely treated as `text`. Future delivery changes
 must still pass text/shadow validation before a controlled production cutover.
+
+V3.1-alpha.1 adds two independent, legacy-safe Market News flags:
+
+```env
+FIONA_TELEGRAM_MEDIA_MODE=document
+FIONA_OUTPUT_LOCALE=zh-CN
+```
+
+- `document` preserves the V3.0 1080 x 1350 `sendDocument` path.
+- `photo` selects the native 1440 x 1800 `sendPhoto` path.
+- `zh-CN` preserves the current Market News language.
+- `en-US` selects the centralized American-English Market News output layer.
+
+Both new flags retain legacy defaults when absent or invalid. They are not a
+production activation instruction. A definite photo failure falls back to text
+once; an ambiguous Telegram outcome does not trigger a retry or fallback.
 
 Offline image delivery verification:
 
@@ -212,6 +230,14 @@ V3.1 Gate 0 records:
 - `docs/v3_1/FIONA_V3_1_IMPLEMENTATION_ROADMAP.md`
 - `docs/v3_1/FIONA_V3_1_RELEASE_STRATEGY.md`
 - `docs/v3_1/gates/GATE_0_CLOSEOUT.md`
+
+V3.1 Gate 1 records:
+
+- `docs/v3_1/gates/GATE_1_IMPLEMENTATION.md`
+- `docs/v3_1/FIONA_NATIVE_PHOTO_SPEC.md`
+- `docs/v3_1/FIONA_EN_US_OUTPUT_STANDARD.md`
+- `docs/v3_1/FIONA_IOS_VISUAL_QA.md`
+- `docs/releases/FIONA_V3_1_ALPHA_1_RELEASE_NOTES.md`
 
 ## Files
 

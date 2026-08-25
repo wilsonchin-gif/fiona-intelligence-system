@@ -1,7 +1,7 @@
 # Fiona V3.1 Release Strategy
 
-Version: Phase 0
-Status: Gate 0 APPROVED and closed; no Gate 1 action authorized
+Version: V3.1-alpha.1
+Status: Gate 1 implemented behind legacy defaults; activation not authorized
 Owner: Wilson / Codex
 Updated: 2026-08-25
 
@@ -359,7 +359,8 @@ V3.1.0 may be marked Production only after:
 
 ## 12. Current Authorization
 
-Gate 0 Product Review is closed with a PASS WITH CONDITIONS verdict. This
-document remains a release plan only. It does not authorize a Railway variable
-change, deployment, Telegram message, source integration, or Gate 1
-implementation. Gate 1 has not started.
+Gate 0 is closed. Gate 1 implementation has a `PASS WITH CONDITIONS` local
+verdict and may be released only with `document + zh-CN` legacy defaults. This
+document does not authorize a Railway variable change, a Telegram test message,
+`photo + en-US` activation, source integration, or Gate 2. Product Review must
+approve isolated Telegram/iOS validation and any later production cutover.

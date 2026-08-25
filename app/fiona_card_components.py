@@ -9,8 +9,8 @@ from typing import Iterable, Protocol
 from PIL import ImageDraw, ImageFont
 
 from app.design_tokens import FIONA_TOKENS, FionaDesignTokens, Region
+from app.fiona_locale import FionaLocaleStrings, OutputLocale, ZH_CN_STRINGS, format_display_timestamp
 from app.fiona_market_news_image import (
-    DISCLAIMER,
     ChangedEventView,
     HeatMapView,
     KeyMarketView,
@@ -47,6 +47,8 @@ class ComponentRenderResult:
 class RenderContext:
     draw: ImageDraw.ImageDraw
     tokens: FionaDesignTokens = FIONA_TOKENS
+    strings: FionaLocaleStrings = ZH_CN_STRINGS
+    locale: OutputLocale = OutputLocale.ZH_CN
 
 
 class CardComponent(Protocol):
@@ -106,12 +108,12 @@ class HeaderComponent:
             (region.left, region.top, region.right, region.top + space.xs - space.xxs // 2),
             fill=colors.brand,
         )
-        brand_y = region.top + space.lg
-        draw.text((left, brand_y), "FIONA", font=font(type_.brand_wordmark, bold=True), fill=colors.brand)
-        brand_width = text_width(draw, "FIONA", font(type_.brand_wordmark, bold=True))
+        brand_y = max(region.top + space.lg, tokens.canvas.safe_top)
+        draw.text((left, brand_y), context.strings.brand_wordmark, font=font(type_.brand_wordmark, bold=True), fill=colors.brand)
+        brand_width = text_width(draw, context.strings.brand_wordmark, font(type_.brand_wordmark, bold=True))
         draw.text(
             (left + brand_width + space.lg, brand_y + space.xxs // 2),
-            "MARKET INTELLIGENCE",
+            context.strings.brand_descriptor,
             font=font(type_.brand_descriptor, bold=True),
             fill=colors.muted_text,
         )
@@ -119,12 +121,12 @@ class HeaderComponent:
         title_y = region.top + space.xxl + space.xs
         draw.text(
             (left, title_y),
-            "Fiona Market News",
+            context.strings.product_title,
             font=font(type_.product_title, bold=True),
             fill=colors.primary_text,
         )
 
-        cadence = "04H BRIEF"
+        cadence = context.strings.interim_badge
         cadence_font = font(type_.brand_descriptor, bold=True)
         cadence_width = text_width(draw, cadence, cadence_font) + space.xl
         cadence_top = region.top + space.lg
@@ -143,7 +145,7 @@ class HeaderComponent:
             fill=colors.secondary_text,
             anchor="ma",
         )
-        timestamp = self.value.generated_at.strftime("%Y-%m-%d  %H:%M  UTC+8")
+        timestamp = format_display_timestamp(self.value.generated_at, context.locale)
         draw.text(
             (right, region.bottom - space.xl - space.xs),
             timestamp,
@@ -172,7 +174,7 @@ class MarketRegimeComponent:
         left = space.outer_margin
         draw.text(
             (left, region.top + space.sm),
-            "MARKET REGIME",
+            context.strings.market_regime,
             font=font(type_.regime_label, bold=True),
             fill=colors.muted_text,
         )
@@ -185,7 +187,7 @@ class MarketRegimeComponent:
         draw_text_fit(
             context,
             (grid_x(tokens, 3), region.top + space.lg + space.xxs, grid_x(tokens, 8), region.bottom - space.xs),
-            semantic_limit(self.value.reason, 26),
+            semantic_limit(self.value.reason, 42 if tokens.canvas.width > 1080 else 26),
             font(type_.market_metric, bold=True),
             colors.secondary_text,
             max_lines=1,
@@ -212,7 +214,7 @@ class EvidenceComponent:
         tone = tone_color(tokens, self.value.tone)
         draw.text(
             (badge_left - space.xxl - space.xl, region.top + space.md + space.xxs),
-            "EVIDENCE",
+            context.strings.evidence,
             font=font(type_.regime_label, bold=True),
             fill=colors.muted_text,
         )
@@ -229,7 +231,7 @@ class EvidenceComponent:
             font=selected_font,
             fill=tone,
         )
-        metadata = f"{self.value.source_count} sources · {self.value.completeness}%"
+        metadata = f"{self.value.source_count} {context.strings.sources} · {self.value.completeness}%"
         draw.text(
             (right, region.bottom - space.md),
             metadata,
@@ -263,13 +265,13 @@ class HeroJudgmentComponent:
         content_left = left + space.lg
         draw.text(
             (content_left, top + space.sm),
-            "FIONA'S VIEW",
+            context.strings.fiona_view,
             font=font(type_.hero_label, bold=True),
             fill=colors.brand,
         )
         draw.text(
             (right - space.lg, top + space.sm + 1),
-            "TODAY'S JUDGEMENT",
+            context.strings.today_judgment,
             font=font(type_.brand_descriptor, bold=True),
             fill=colors.muted_text,
             anchor="ra",
@@ -277,7 +279,7 @@ class HeroJudgmentComponent:
         draw_text_fit(
             context,
             (content_left, top + space.xxl, right - space.lg, bottom - space.xxl),
-            semantic_limit(self.value.judgment, 68),
+            semantic_limit(self.value.judgment, 110 if tokens.canvas.width > 1080 else 68),
             font(type_.hero_body, bold=True),
             colors.primary_text,
             max_lines=2,
@@ -288,7 +290,7 @@ class HeroJudgmentComponent:
         draw_text_fit(
             context,
             (content_left, meta_top, midpoint - space.md, bottom - space.xs),
-            f"DRIVER  {semantic_limit(self.value.primary_driver, 27)}",
+            f"{context.strings.driver}  {semantic_limit(self.value.primary_driver, 42 if tokens.canvas.width > 1080 else 27)}",
             font(type_.hero_meta, bold=True),
             colors.secondary_text,
             max_lines=1,
@@ -296,7 +298,7 @@ class HeroJudgmentComponent:
         draw_text_fit(
             context,
             (midpoint + space.md, meta_top, right - space.lg, bottom - space.xs),
-            f"NEXT  {semantic_limit(self.value.next_confirmation, 27)}",
+            f"{context.strings.next_confirmation}  {semantic_limit(self.value.next_confirmation, 42 if tokens.canvas.width > 1080 else 27)}",
             font(type_.hero_meta, bold=True),
             colors.brand,
             max_lines=1,
@@ -313,10 +315,18 @@ class HeatMapComponent:
     def render(self, context: RenderContext) -> ComponentRenderResult:
         tokens, space = context.tokens, context.tokens.spacing
         region = tokens.regions[self.region_name]
-        draw_section_title(context, region.top + space.xs, "MARKET HEAT MAP", "EVIDENCE · FOUR MARKETS")
+        draw_section_title(context, region.top + space.xs, context.strings.heat_map, context.strings.heat_map_meta)
         cards = list(self.values)[:4]
         while len(cards) < 4:
-            cards.append(HeatMapView("", "Unavailable", None, "Unavailable", "Data unavailable"))
+            cards.append(
+                HeatMapView(
+                    "",
+                    context.strings.data_unavailable,
+                    None,
+                    context.strings.awaiting,
+                    context.strings.data_unavailable,
+                )
+            )
         top = region.top + space.xl + space.xs
         bottom = region.bottom - space.sm
         row_gap = space.xs
@@ -346,14 +356,19 @@ class WhatChangedComponent:
         draw, tokens = context.draw, context.tokens
         colors, type_, space = tokens.colors, tokens.typography, tokens.spacing
         region = tokens.regions[self.region_name]
-        draw_section_title(context, region.top + space.xs, "WHAT CHANGED", "MATERIAL CHANGE ONLY · MAX 2")
+        draw_section_title(
+            context,
+            region.top + space.xs,
+            context.strings.what_changed,
+            context.strings.what_changed_meta,
+        )
         observations = list(self.values)[:2]
         if not observations:
             observations = [
                 ChangedEventView(
-                    event="暂无新增高价值变化。",
-                    why="现有信号尚未形成新的市场结构。",
-                    watch="等待资金流与关键资产同步确认。",
+                    event=context.strings.no_material_change,
+                    why=context.strings.no_material_change_why,
+                    watch=context.strings.waiting_confirmation,
                 )
             ]
         cards_top = region.top + space.xl + space.xs
@@ -376,7 +391,7 @@ class WhatChangedComponent:
             draw_text_fit(
                 context,
                 (headline_left, y + space.xs, right - space.xxl * 4, y + space.xl + space.sm),
-                semantic_limit(item.event, 36),
+                semantic_limit(item.event, 52 if tokens.canvas.width > 1080 else 36),
                 font(type_.change_headline, bold=True),
                 colors.primary_text,
                 max_lines=1,
@@ -386,7 +401,7 @@ class WhatChangedComponent:
             draw_text_fit(
                 context,
                 (headline_left, detail_top, midpoint + space.lg, y + row_height - space.xs),
-                f"WHY  {semantic_limit(item.why, 34)}",
+                f"WHY  {semantic_limit(item.why, 50 if tokens.canvas.width > 1080 else 34)}",
                 font(type_.body),
                 colors.secondary_text,
                 max_lines=1,
@@ -394,7 +409,7 @@ class WhatChangedComponent:
             draw_text_fit(
                 context,
                 (midpoint + space.xxl, detail_top, right - space.lg, y + row_height - space.xs),
-                f"WATCH  {semantic_limit(item.watch, 30)}",
+                f"WATCH  {semantic_limit(item.watch, 45 if tokens.canvas.width > 1080 else 30)}",
                 font(type_.body, bold=True),
                 colors.positive,
                 max_lines=1,
@@ -413,10 +428,22 @@ class KeyMarketsComponent:
         draw, tokens = context.draw, context.tokens
         colors, type_, space = tokens.colors, tokens.typography, tokens.spacing
         region = tokens.regions[self.region_name]
-        draw_section_title(context, region.top + space.xs, "KEY MARKETS", "FIVE VERIFICATION ANCHORS")
+        draw_section_title(
+            context,
+            region.top + space.xs,
+            context.strings.key_markets,
+            context.strings.key_markets_meta,
+        )
         markets = list(self.values)[: tokens.grid.key_market_columns]
         while len(markets) < tokens.grid.key_market_columns:
-            markets.append(KeyMarketView("", "Awaiting", "—", "Data unavailable"))
+            markets.append(
+                KeyMarketView(
+                    "",
+                    context.strings.awaiting,
+                    "—",
+                    context.strings.data_unavailable,
+                )
+            )
         left, right = space.outer_margin, tokens.canvas.width - space.outer_margin
         width = (right - left - tokens.grid.gutter * (tokens.grid.key_market_columns - 1)) // tokens.grid.key_market_columns
         top, bottom = region.top + space.xl + space.xs, region.bottom - space.sm
@@ -458,9 +485,25 @@ class NarrativeComponent:
         tokens, space = context.tokens, context.tokens.spacing
         colors, type_ = tokens.colors, tokens.typography
         region = tokens.regions[self.region_name]
-        draw_section_title(context, region.top + space.xs, "NARRATIVE CONTEXT", "MARKET STORY · MAX 2")
+        draw_section_title(
+            context,
+            region.top + space.xs,
+            context.strings.narrative_context,
+            context.strings.narrative_meta,
+        )
         items = list(self.values)[:2]
-        text = "暂无高置信主叙事" if not items else "  |  ".join(format_narrative(item) for item in items)
+        text = (
+            context.strings.no_high_confidence_narrative
+            if not items
+            else "  |  ".join(
+                format_narrative(
+                    item,
+                    context.strings,
+                    max_name_chars=24 if tokens.canvas.width > 1080 else 16,
+                )
+                for item in items
+            )
+        )
         top = region.top + space.xl + space.xxs
         bottom = region.bottom - space.sm
         rounded_box(
@@ -491,10 +534,15 @@ class WatchNextComponent:
         draw, tokens = context.draw, context.tokens
         colors, type_, space = tokens.colors, tokens.typography, tokens.spacing
         region = tokens.regions[self.region_name]
-        draw_section_title(context, region.top + space.xs, "WATCH NEXT", "OBSERVABLE · NOT A FORECAST")
+        draw_section_title(
+            context,
+            region.top + space.xs,
+            context.strings.watch_next,
+            context.strings.watch_next_meta,
+        )
         items = list(self.values)[: tokens.grid.watch_columns]
         while len(items) < tokens.grid.watch_columns:
-            items.append("等待下一轮高价值数据确认")
+            items.append(context.strings.waiting_confirmation)
         left, right = space.outer_margin, tokens.canvas.width - space.outer_margin
         width = (right - left - tokens.grid.gutter * (tokens.grid.watch_columns - 1)) // tokens.grid.watch_columns
         top, bottom = region.top + space.xl + space.xxs, region.bottom - space.sm
@@ -523,7 +571,12 @@ class HistoricalContextComponent:
         draw, tokens = context.draw, context.tokens
         colors, type_, space = tokens.colors, tokens.typography, tokens.spacing
         region = tokens.regions[self.region_name]
-        draw_section_title(context, region.top + space.xs, "HISTORICAL CONTEXT", "REFERENCE · NOT ANALOGY")
+        draw_section_title(
+            context,
+            region.top + space.xs,
+            context.strings.historical_context,
+            context.strings.historical_context_meta,
+        )
         top, bottom = region.top + space.xl + space.xxs, region.bottom - space.xs
         left, right = space.outer_margin, tokens.canvas.width - space.outer_margin
         rounded_box(
@@ -544,7 +597,7 @@ class HistoricalContextComponent:
         )
         draw.text(
             (right - space.sm, top + 2),
-            "参照不代表情景重演",
+            context.strings.historical_caveat,
             font=font(type_.badge_meta, bold=True),
             fill=colors.muted_text,
             anchor="ra",
@@ -605,25 +658,34 @@ class FooterComponent:
         draw_text_fit(
             context,
             (left, region.top + space.md, right - space.xxl * 5, region.bottom - space.lg),
-            DISCLAIMER,
+            context.strings.informational_disclaimer,
             font(type_.footer),
             colors.muted_text,
             max_lines=1,
         )
-        draw.text(
-            (right, region.top + space.md),
-            tokens.footer.signature,
-            font=font(type_.footer_brand, bold=True),
-            fill=colors.secondary_text,
-            anchor="ra",
-        )
-        draw.text(
-            (right, region.bottom - space.lg),
-            tokens.footer.descriptor,
-            font=font(type_.footer_meta, bold=True),
-            fill=colors.muted_text,
-            anchor="ra",
-        )
+        if tokens.canvas.width > 1080:
+            draw.text(
+                (right, region.top + space.md),
+                tokens.footer.descriptor,
+                font=font(type_.footer_brand, bold=True),
+                fill=colors.secondary_text,
+                anchor="ra",
+            )
+        else:
+            draw.text(
+                (right, region.top + space.md),
+                tokens.footer.signature,
+                font=font(type_.footer_brand, bold=True),
+                fill=colors.secondary_text,
+                anchor="ra",
+            )
+            draw.text(
+                (right, region.bottom - space.lg),
+                tokens.footer.descriptor,
+                font=font(type_.footer_meta, bold=True),
+                fill=colors.muted_text,
+                anchor="ra",
+            )
         return component_result(self, tokens, 1)
 
 
@@ -637,7 +699,7 @@ def draw_heat_tile(
 ) -> None:
     draw, tokens = context.draw, context.tokens
     colors, type_, space = tokens.colors, tokens.typography, tokens.spacing
-    direction = card.direction if card.score is not None else "Awaiting"
+    direction = card.direction if card.score is not None else context.strings.awaiting
     semantic_color = direction_color(tokens, direction)
     intensity = 0.08 if card.score is None else 0.08 + min(0.08, abs(card.score - 50) / 625)
     rounded_box(
@@ -658,7 +720,7 @@ def draw_heat_tile(
     if card.score is not None:
         draw.text((x + space.xxl + space.lg - 2, y + space.xxl - space.xxs), "/100", font=font(type_.metric_suffix), fill=colors.secondary_text)
     draw.text((x + width - space.md, y + space.sm - 1), direction, font=font(type_.market_label, bold=True), fill=semantic_color, anchor="ra")
-    metric = "Data unavailable" if card.score is None else semantic_limit(card.key_metric, 16)
+    metric = context.strings.data_unavailable if card.score is None else semantic_limit(card.key_metric, 16)
     draw_text_fit(
         context,
         (x + space.xxl * 2 + space.lg, y + space.xl + space.xs - 1, x + width - space.md, y + height - space.xs),
@@ -801,7 +863,8 @@ def semantic_limit(text: str, max_chars: int) -> str:
     if boundary >= max_chars // 2:
         result = prefix[: boundary + 1].rstrip()
         if result[-1] in {"，", "；", "、", ",", ";"}:
-            result = result[:-1].rstrip() + "。"
+            sentence_end = "。" if re.search(r"[\u3400-\u9fff]", clean) else "."
+            result = result[:-1].rstrip() + sentence_end
         return result
     while prefix and prefix[-1].isascii() and prefix[-1].isalnum():
         prefix = prefix[:-1]
@@ -894,9 +957,14 @@ def market_accent(tokens: FionaDesignTokens, key: str) -> str:
     }.get(str(key).lower(), tokens.colors.unknown)
 
 
-def format_narrative(item: NarrativeView) -> str:
-    confidence = f"{item.confidence}%" if item.confidence is not None else "Confidence unavailable"
-    return f"{semantic_limit(item.name, 16)} · {item.direction} · {confidence}"
+def format_narrative(
+    item: NarrativeView,
+    strings: FionaLocaleStrings = ZH_CN_STRINGS,
+    *,
+    max_name_chars: int = 16,
+) -> str:
+    confidence = f"{item.confidence}%" if item.confidence is not None else strings.confidence_unavailable
+    return f"{semantic_limit(item.name, max_name_chars)} · {item.direction} · {confidence}"
 
 
 def grid_x(tokens: FionaDesignTokens, column: int) -> int:
