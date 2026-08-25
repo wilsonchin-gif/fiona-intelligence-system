@@ -12,6 +12,13 @@ Fiona focuses on:
 
 Fiona does not provide investment advice, price targets, or trading instructions.
 
+## Current Product Status
+
+- Production: Fiona V3.0.0 Design System 1.0 (`a8678b0`)
+- Railway delivery: Market News `image` mode
+- Fiona V3.1 Global 4H Intelligence: Gate 0 closed on 2026-08-25
+- Gate 1 implementation: not started
+
 ## Production Runtime
 
 Railway starts Fiona with:
@@ -24,16 +31,11 @@ The runtime continuously checks whether a scheduled brief is due and writes runt
 
 ## Local Workspace
 
-Wilson AI Lab is the long-term local workspace:
+Wilson AI Lab is the long-term workspace. The active Fiona repository currently
+lives at:
 
 ```text
-~/Documents/Wilson AI Lab/
-```
-
-Fiona's local development repository lives at:
-
-```text
-~/Documents/Wilson AI Lab/Fiona Intelligence Platform/03_Development/fiona-intelligence-system/
+/Users/mac/Desktop/Wilson AI Lab/Fiona Intelligence Platform/03_Development/fiona-intelligence-system/
 ```
 
 Local runtime data and historical reports live under:
@@ -95,11 +97,11 @@ Not recommended for production defaults:
 TELEGRAM_BOT_TOKEN=your_bot_token
 TELEGRAM_GROUP_ID=your_group_id
 WILSON_SEND=1
-WILSON_TIMEZONE=Asia/Manila
+WILSON_TIMEZONE=Asia/Hong_Kong
 WILSON_INTERVAL_MINUTES=5
 FIONA_ALERT_ENABLED=0
 FIONA_ALERT_DRY_RUN=1
-FIONA_MARKET_NEWS_MODE=text
+FIONA_MARKET_NEWS_MODE=image
 ```
 
 Send switch priority:
@@ -112,22 +114,22 @@ If `WILSON_SEND` exists, it is the production source of truth.
 
 ## Market News Image Mode
 
-Market News delivery is controlled by one feature flag:
+Market News delivery is controlled by one feature flag. The code-safe default
+remains `text`; the validated V3.0.0 Railway production setting is `image`:
 
 ```env
-FIONA_MARKET_NEWS_MODE=text
+FIONA_MARKET_NEWS_MODE=image
 ```
 
-- `text`: send the current text brief only. This is the default and the required
-  first-deployment setting.
+- `text`: send the current text brief only. This remains the rollback setting and
+  the code default when the variable is absent.
 - `shadow`: send the current text brief, then generate and validate the PNG in
   the background without sending the image.
 - `image`: send one PNG document with its Caption. A definite image-path failure
   falls back to the current text brief.
 
-Invalid values are logged and safely treated as `text`. Do not switch Railway
-directly to `image`; validate `text`, then `shadow`, before the manual image
-cutover.
+Invalid values are logged and safely treated as `text`. Future delivery changes
+must still pass text/shadow validation before a controlled production cutover.
 
 Offline image delivery verification:
 
@@ -203,6 +205,13 @@ Documentation entry:
 ```text
 docs/README.md
 ```
+
+V3.1 Gate 0 records:
+
+- `docs/v3_1/FIONA_V3_1_PRODUCT_FREEZE.md`
+- `docs/v3_1/FIONA_V3_1_IMPLEMENTATION_ROADMAP.md`
+- `docs/v3_1/FIONA_V3_1_RELEASE_STRATEGY.md`
+- `docs/v3_1/gates/GATE_0_CLOSEOUT.md`
 
 ## Files
 

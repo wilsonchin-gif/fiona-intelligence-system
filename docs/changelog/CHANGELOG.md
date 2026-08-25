@@ -1,15 +1,39 @@
 # Fiona Version Changelog
 
-版本：V3.0.0
-状态：Active  
+版本：V3.1.0 Planning
+状态：Gate 0 Closed; Production remains V3.0.0
 负责人：Wilson  
-更新时间：2026-08-05
+更新时间：2026-08-25
+
+## V3.1.0 Phase 0 - Gate 0 Closeout
+
+日期：2026-08-25
+
+Commit：见 Git 历史 `Close Fiona V3.1 Gate 0 product and technical audit`
+
+影响范围：Product Freeze / Technical Audit / Implementation Roadmap / Release Strategy / Documentation Index
+
+### 新增内容
+
+- 冻结 Fiona Global 4H Intelligence 产品边界、原生图片交付语义、`en-US` 输出边界、动态 6:3:1 全球覆盖、六时段节奏与 4H 状态要求。
+- 新增 Gate 0 Closeout，记录 Product Review、技术结论、遗留风险和 Gate 1 准入条件。
+
+### 修复内容
+
+- 修正 README 的当前生产图片模式、实际本地仓库路径和 V3.1 状态。
+- 修正 Version Matrix 与技术审计中已过期的待确认状态。
+
+### 影响范围
+
+- 仅文档变更。
+- Production V1/V3.0.0 代码、Scheduler、Telegram、Railway 与环境变量均未改变。
+- Gate 1 未开始。
 
 ## V3.0.0 GA - Fiona Design System 1.0
 
 发布日期：2026-08-05
 
-Commit：由本次 GA release commit 记录
+Commit：`a8678b0 Release Fiona Design System 1.0`
 
 影响范围：Market News Renderer / Design Tokens / Component Library / Tests / Product Documentation
 
