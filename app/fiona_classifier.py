@@ -1,5 +1,17 @@
 from __future__ import annotations
 
+from app.fiona_locale import (
+    OutputLocale,
+    brief_strings_for_locale,
+    compose_safe_en_us_alert_fallback,
+    english_alert_severity,
+    english_asset_names,
+    english_event_projection,
+    english_event_view,
+    english_watch_points,
+    finalize_user_visible_text,
+    parse_output_locale,
+)
 from app.fiona_types import AlertLevel, EventCategory, FionaEvent, LifecycleStatus, PushDecision
 
 
@@ -107,7 +119,13 @@ def is_a_level_hard_trigger(event: FionaEvent) -> bool:
     return False
 
 
-def render_alert(event: FionaEvent) -> str:
+def render_alert(
+    event: FionaEvent,
+    output_locale: OutputLocale | str = OutputLocale.ZH_CN,
+) -> str:
+    locale = output_locale if isinstance(output_locale, OutputLocale) else parse_output_locale(output_locale)
+    if locale == OutputLocale.EN_US:
+        return render_alert_en_us(event)
     watch_next = "\n".join(f"• 等待：{normalize_watch_point(item)}" for item in event.watch_next[:3]) or "• 等待：下一轮信号确认"
     return sanitize_alert_text("\n".join(
         [
@@ -140,6 +158,46 @@ def render_alert(event: FionaEvent) -> str:
     ))
 
 
+def render_alert_en_us(event: FionaEvent) -> str:
+    resources = brief_strings_for_locale(OutputLocale.EN_US)
+    what, why, _ = english_event_projection(event)
+    watch_next = "\n".join(f"• {item}" for item in english_watch_points(event, limit=3))
+    rendered = "\n".join(
+        [
+            f"Fiona Alert | {english_alert_severity(event.level)}",
+            "",
+            "[EVENT]",
+            what,
+            "",
+            "[WHY IT MATTERS]",
+            why,
+            "",
+            "[AFFECTED ASSETS]",
+            format_affected_assets_en_us(event),
+            "",
+            "[FIONA ASSESSMENT]",
+            f"Category: {category_label(event)}",
+            f"Direction: {event.market_direction.value}",
+            f"Confidence: {event.conviction_score}%",
+            f"Importance: {event.intelligence_score}/100",
+            "",
+            "[NEXT CONFIRMATION]",
+            watch_next,
+            "",
+            "[FIONA'S VIEW]",
+            english_event_view(event),
+            "",
+            "[DISCLAIMER]",
+            resources.disclaimer,
+        ]
+    )
+    return finalize_user_visible_text(
+        rendered,
+        OutputLocale.EN_US,
+        fallback=lambda: compose_safe_en_us_alert_fallback(event),
+    )
+
+
 def category_label(event: FionaEvent) -> str:
     return ALERT_CATEGORY_LABELS.get(event.category, event.category.value.title())
 
@@ -158,6 +216,21 @@ def format_affected_assets(event: FionaEvent) -> str:
         lines.append(f"传导：{'、'.join(transmission_assets)}")
     if watch_assets:
         lines.append(f"观察：{'、'.join(watch_assets)}")
+    return "\n".join(lines)
+
+
+def format_affected_assets_en_us(event: FionaEvent) -> str:
+    assets = english_asset_names(event.affected_assets)
+    if not assets:
+        return "Direct: Market\nTransmission: Risk Assets\nWatch: Fund flows, volatility, volume"
+    direct = assets[0]
+    transmission_assets = assets[1:4]
+    watch_assets = inferred_watch_assets(event, assets)
+    lines = [f"Direct: {direct}"]
+    if transmission_assets:
+        lines.append(f"Transmission: {', '.join(transmission_assets)}")
+    if watch_assets:
+        lines.append(f"Watch: {', '.join(watch_assets)}")
     return "\n".join(lines)
 
 

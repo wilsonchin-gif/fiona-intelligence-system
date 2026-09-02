@@ -1,8 +1,8 @@
 # Fiona American English Output Standard
 
-- Version: V3.1-alpha.1
-- Status: Market News implemented; remaining products pending
-- Updated: 2026-08-25
+- Version: V3.1-alpha.1.1
+- Status: All active Telegram presentation surfaces implemented; production observation pending
+- Updated: 2026-09-02
 
 ## Purpose
 
@@ -30,7 +30,7 @@ Original title/text/source metadata
 
 Original title, text/snippet, source language, source URL, and source name stay
 in provenance when current upstream structures provide them. Primary user
-output is English. Gate 1 does not add an external translation API.
+output is English. Gate 1.1 does not add an external translation API.
 
 ## Fiona Voice
 
@@ -53,6 +53,16 @@ output is English. Gate 1 does not add an external translation API.
 | No meaningful update | `No material change.` |
 | Missing evidence | `Data coverage limited` / `Data unavailable` |
 | Disclaimer | `For informational purposes only. Not investment advice.` |
+| Morning context | `Overnight Market` / `Today's Watch` |
+| Evening context | `Tonight's Focus` / `Night Risk Radar` |
+| Event significance | `Why It Matters` |
+| Alert impact | `Affected Assets` / `Fiona Assessment` |
+| Confirmation variable | `Next Confirmation` |
+| Severity S / A / B / C | `Critical` / `High` / `Moderate` / `Low` |
+
+All active products consume this shared terminology through
+`app/fiona_locale.py`. Individual brief builders may compose different
+sentences, but they do not invent competing translations for shared concepts.
 
 ## Caption Standard
 
@@ -72,23 +82,34 @@ language while the legacy cadence remains active.
 
 ## Leakage Rule
 
-The primary Market News artifact rejects unexpected ideographs, Japanese
-kana, CJK punctuation, and full-width forms in `en-US` mode. Source provenance
-is not part of the primary artifact and can preserve original-language text.
-Entity-name exceptions require an explicit product-approved allowlist; Gate 1
-uses no automatic allowlist.
+Every active Telegram text payload and the primary Market News artifact reject
+unexpected ideographs, Japanese kana, CJK punctuation, and full-width forms in
+`en-US` mode. Source provenance is not part of the primary artifact and can
+preserve original-language text. Entity-name exceptions require an explicit
+product-approved allowlist; Gate 1.1 uses no automatic allowlist.
+
+Failure handling is bounded: known deterministic labels are repaired once,
+then the existing category-aware English synthesis is used, then one safe
+English fallback is allowed. If that fallback is unsafe, delivery fails. Fiona
+does not silently send mixed-language content and does not enter an unbounded
+regeneration loop.
 
 ## Model Language Control
 
-Current Gate 1 Market News projection is deterministic and does not call an LLM,
-so no prompt change is applicable. Any future model-generated surface must
+Current Gate 1.1 presentation is deterministic and does not call an LLM, so no
+prompt change is applicable. Any future model-generated surface must
 explicitly request American English, preserve facts separately, and pass the
 same post-generation leakage boundary. A model may not independently determine
 source verification or silently alter financial facts.
 
 ## Current Coverage
 
-Implemented for Market News card, native caption, text fallback, missing-data
-copy, timestamp, judgment, and disclaimer. Morning, Evening, Daily, Weekly, and
-Alert remain Chinese-capable legacy products and require a controlled future
-migration. V3.1-alpha.1 therefore does not claim `en-US` everywhere.
+Implemented for Market News card, native caption, Morning, Evening, Daily,
+Weekly, Alert, text fallback, missing-data copy, timestamp, judgment,
+confirmation language, and disclaimer. The default remains `zh-CN`; when
+`FIONA_OUTPUT_LOCALE=en-US`, every active Telegram presentation surface uses
+the same final language guard.
+
+Historical documents, internal logs, source-provenance fields, and inactive
+legacy report generators are outside the production user-surface contract and
+may retain their original language.

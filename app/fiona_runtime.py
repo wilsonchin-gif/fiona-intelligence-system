@@ -45,11 +45,12 @@ from app.fiona_market_news_image import (
     caption_intelligence,
     compose_market_news_caption,
     compose_market_news_fallback_text,
-    compose_safe_en_us_market_news_fallback,
 )
 from app.fiona_locale import (
     OutputLocale,
+    compose_safe_en_us_brief_fallback,
     contains_cjk,
+    finalize_user_visible_text,
     output_locale_from_env,
     parse_output_locale,
 )
@@ -159,22 +160,21 @@ def run_once(
     snapshot: dict[str, Any] | None = None
     market_news_mode: MarketNewsMode | None = None
     telegram_media_mode = TelegramMediaMode.DOCUMENT
-    output_locale = OutputLocale.ZH_CN
+    warning_logger = lambda item: append_runtime_log(log_path, item)
+    output_locale = output_locale_from_env(warning_logger=warning_logger)
+    status["output_locale"] = output_locale.value
     localized_market_news_view_model: Any | None = None
     telegram_text_override: str | None = None
     try:
         snapshot = snapshot_builder(generated_at)
-        payload = build_payload(snapshot, generated_at, memory_path, brief)
+        payload = build_payload(snapshot, generated_at, memory_path, brief, output_locale=output_locale)
         if payload.brief is not None and payload.brief.kind == FionaBriefKind.MARKET_NEWS:
-            warning_logger = lambda item: append_runtime_log(log_path, item)
             market_news_mode = market_news_mode_from_env(
                 warning_logger=warning_logger
             )
             telegram_media_mode = telegram_media_mode_from_env(warning_logger=warning_logger)
-            output_locale = output_locale_from_env(warning_logger=warning_logger)
             status["market_news_mode"] = market_news_mode.value
             status["telegram_media_mode"] = telegram_media_mode.value
-            status["output_locale"] = output_locale.value
             if output_locale == OutputLocale.EN_US:
                 localized_market_news_view_model = build_market_news_view_model(
                     payload.snapshot,
@@ -192,7 +192,7 @@ def run_once(
             telegram_text_override=telegram_text_override,
         )
         if send and should_push_alerts(brief):
-            status["alerts"]["pushed"] = push_alerts(payload.alert_messages, log_path)
+            status["alerts"]["pushed"] = push_alerts(payload.alert_messages, log_path, output_locale=output_locale)
         if send and payload.brief is not None:
             if payload.brief.kind == FionaBriefKind.MARKET_NEWS:
                 status["brief_push"] = push_market_news(
@@ -207,14 +207,19 @@ def run_once(
                     text_override=telegram_text_override,
                 )
             else:
-                status["brief_push"] = push_text(payload.brief.render_text(), log_path, scope=payload.brief.title)
+                status["brief_push"] = push_text(
+                    payload.brief.render_text(),
+                    log_path,
+                    scope=payload.brief.title,
+                    output_locale=output_locale,
+                )
     except Exception as exc:  # noqa: BLE001 - runtime must not kill the scheduler on one bad cycle.
         status["ok"] = False
         status["errors"].append(str(exc))
         append_runtime_log(log_path, {"event": "fionaRuntimeError", "ok": False, "error": str(exc)})
-        if fallback_to_wilson and snapshot is not None:
+        if fallback_to_wilson and (snapshot is not None or output_locale == OutputLocale.EN_US):
             fallback_text = (
-                compose_safe_en_us_market_news_fallback(generated_at)
+                compose_safe_en_us_brief_fallback(brief, generated_at)
                 if output_locale == OutputLocale.EN_US
                 else render_wilson_markdown(snapshot)
             )
@@ -222,7 +227,12 @@ def run_once(
                 (base / "fiona_fallback_telegram.md").write_text(fallback_text, encoding="utf-8")
             fallback_status: dict[str, Any] = {"used": True, "markdown": str(latest_dir / "fiona_fallback_telegram.md")}
             if send:
-                fallback_status["push"] = push_text(fallback_text, log_path, scope="Wilson fallback")
+                fallback_status["push"] = push_text(
+                    fallback_text,
+                    log_path,
+                    scope="Fiona fallback",
+                    output_locale=output_locale,
+                )
             status["fallback"] = fallback_status
         else:
             status["fallback"] = {"used": False}
@@ -232,16 +242,27 @@ def run_once(
     return status
 
 
-def build_payload(snapshot: dict[str, Any], generated_at: datetime, memory_path: Path, brief: BriefSelector) -> FionaPayload:
+def build_payload(
+    snapshot: dict[str, Any],
+    generated_at: datetime,
+    memory_path: Path,
+    brief: BriefSelector,
+    output_locale: OutputLocale | str = OutputLocale.ZH_CN,
+) -> FionaPayload:
+    locale = output_locale if isinstance(output_locale, OutputLocale) else parse_output_locale(output_locale)
     memory = FionaMemory.load(memory_path)
     raw_events = snapshot_to_events(snapshot, generated_at)
     engine = FionaAlertEngine(LifecycleManager(memory.event_memory))
     events = [engine.process(event) for event in raw_events]
     memory.event_memory = engine.lifecycle_manager.records
     narratives = memory.update_narratives(events, now=generated_at)
-    alert_messages = [render_alert(event) for event in events if event.push_decision == PushDecision.SEND_NOW]
+    alert_messages = [
+        render_alert(event, output_locale=locale)
+        for event in events
+        if event.push_decision == PushDecision.SEND_NOW
+    ]
 
-    brief_obj = build_selected_brief(brief, events, narratives, snapshot, generated_at)
+    brief_obj = build_selected_brief(brief, events, narratives, snapshot, generated_at, output_locale=locale)
     if brief_obj is not None:
         memory.remember_decision(
             DecisionMemoryRecord(
@@ -264,6 +285,7 @@ def build_selected_brief(
     narratives: list[Any],
     snapshot: dict[str, Any],
     generated_at: datetime,
+    output_locale: OutputLocale | str = OutputLocale.ZH_CN,
 ) -> FionaBrief | None:
     if str(brief).lower() == "alert":
         return None
@@ -271,8 +293,15 @@ def build_selected_brief(
         due = due_brief_kinds(generated_at)
         if not due:
             return None
-        return build_brief(due[0], events, narratives, snapshot, generated_at)
-    return build_brief(brief_kind_from_name(brief), events, narratives, snapshot, generated_at)
+        return build_brief(due[0], events, narratives, snapshot, generated_at, output_locale=output_locale)
+    return build_brief(
+        brief_kind_from_name(brief),
+        events,
+        narratives,
+        snapshot,
+        generated_at,
+        output_locale=output_locale,
+    )
 
 
 def should_push_alerts(brief: BriefSelector) -> bool:
@@ -738,17 +767,36 @@ def build_brief(
     narratives: list[Any],
     snapshot: dict[str, Any],
     generated_at: datetime,
+    output_locale: OutputLocale | str = OutputLocale.ZH_CN,
 ) -> FionaBrief:
     if kind == FionaBriefKind.MORNING:
-        return build_morning_brief(events, narratives, generated_at=generated_at)
+        return build_morning_brief(events, narratives, generated_at=generated_at, output_locale=output_locale)
     if kind == FionaBriefKind.EVENING:
-        return build_evening_brief(events, narratives, generated_at=generated_at)
+        return build_evening_brief(events, narratives, generated_at=generated_at, output_locale=output_locale)
     if kind == FionaBriefKind.MARKET_NEWS:
-        return build_market_news_brief(events, narratives, snapshot=snapshot, generated_at=generated_at)
+        return build_market_news_brief(
+            events,
+            narratives,
+            snapshot=snapshot,
+            generated_at=generated_at,
+            output_locale=output_locale,
+        )
     if kind == FionaBriefKind.DAILY:
-        return build_daily_brief(events, narratives, snapshot=snapshot, generated_at=generated_at)
+        return build_daily_brief(
+            events,
+            narratives,
+            snapshot=snapshot,
+            generated_at=generated_at,
+            output_locale=output_locale,
+        )
     if kind == FionaBriefKind.WEEKLY:
-        return build_weekly_brief(events, narratives, snapshot=snapshot, generated_at=generated_at)
+        return build_weekly_brief(
+            events,
+            narratives,
+            snapshot=snapshot,
+            generated_at=generated_at,
+            output_locale=output_locale,
+        )
     raise ValueError(f"Unsupported Fiona brief kind: {kind}")
 
 
@@ -999,10 +1047,19 @@ def write_payload(
         )
 
 
-def push_alerts(alert_messages: list[str], log_path: Path) -> list[dict[str, Any]]:
+def push_alerts(
+    alert_messages: list[str],
+    log_path: Path,
+    output_locale: OutputLocale | str = OutputLocale.ZH_CN,
+) -> list[dict[str, Any]]:
     results = []
     for index, message in enumerate(alert_messages, 1):
-        result = push_text(message, log_path, scope=f"Fiona Alert {index}")
+        result = push_text(
+            message,
+            log_path,
+            scope=f"Fiona Alert {index}",
+            output_locale=output_locale,
+        )
         results.append(result)
     return results
 
@@ -1040,10 +1097,20 @@ def push_market_news(
     if output_locale == OutputLocale.EN_US and text_override is None:
         legacy_text = compose_market_news_fallback_text(view_model_factory())
     if mode == MarketNewsMode.TEXT:
-        return push_text(legacy_text, log_path, scope=payload.brief.title)
+        return push_text(
+            legacy_text,
+            log_path,
+            scope=payload.brief.title,
+            output_locale=output_locale,
+        )
 
     coordinator = MarketNewsDeliveryCoordinator(
-        text_sender=lambda text: push_text(text, log_path, scope=payload.brief.title),
+        text_sender=lambda text: push_text(
+            text,
+            log_path,
+            scope=payload.brief.title,
+            output_locale=output_locale,
+        ),
         document_sender=telegram_send_document,
         photo_sender=telegram_send_photo,
         logger=lambda item: append_runtime_log(log_path, item),
@@ -1059,8 +1126,31 @@ def push_market_news(
     return delivery.push_result
 
 
-def push_text(text: str, log_path: Path, scope: str) -> dict[str, Any]:
-    chunks = split_message(text)
+def push_text(
+    text: str,
+    log_path: Path,
+    scope: str,
+    output_locale: OutputLocale | str | None = None,
+) -> dict[str, Any]:
+    locale = output_locale_from_env() if output_locale is None else (
+        output_locale if isinstance(output_locale, OutputLocale) else parse_output_locale(output_locale)
+    )
+    safe_text = finalize_user_visible_text(
+        text,
+        locale,
+        fallback=lambda: compose_safe_en_us_brief_fallback(scope, datetime.now(timezone.utc)),
+    )
+    if safe_text != text:
+        append_runtime_log(
+            log_path,
+            {
+                "event": "fionaLocaleFallback",
+                "scope": scope,
+                "output_locale": locale.value,
+                "reason": "cjk_leakage_blocked",
+            },
+        )
+    chunks = split_message(safe_text)
     result: dict[str, Any] = {
         "scope": scope,
         "ok": False,
@@ -1236,6 +1326,10 @@ def parse_args() -> argparse.Namespace:
         "validate-market-news-image",
         help="Validate the production Market News image pipeline without Telegram or scheduler state",
     )
+    subparsers.add_parser(
+        "validate-en-us-surfaces",
+        help="Validate every active en-US user surface without Telegram or scheduler state",
+    )
     return parser.parse_args()
 
 
@@ -1257,6 +1351,12 @@ def first_runtime_env(*names: str) -> str:
 
 def main() -> None:
     args = parse_args()
+    if args.command == "validate-en-us-surfaces":
+        from app.fiona_surface_validation import validate_en_us_user_surfaces_runtime
+
+        validation = validate_en_us_user_surfaces_runtime()
+        print(json.dumps(validation, ensure_ascii=False, separators=(",", ":")), flush=True)
+        raise SystemExit(0 if validation["all_user_surfaces_en_us"] else 1)
     if args.command == "validate-market-news-image":
         validation = validate_market_news_image_runtime(
             output_dir=args.output.expanduser(),

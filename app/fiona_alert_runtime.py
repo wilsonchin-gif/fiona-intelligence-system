@@ -11,6 +11,7 @@ from typing import Any, Callable
 from app.fiona_classifier import render_alert
 from app.fiona_engine import FionaAlertEngine
 from app.fiona_lifecycle import LifecycleManager
+from app.fiona_locale import OutputLocale, output_locale_from_env, parse_output_locale
 from app.fiona_memory import FionaMemory
 from app.fiona_types import EventCategory, FionaEvent, MarketDirection, PushDecision
 from app.telegram_service import send_message as telegram_send_message
@@ -63,6 +64,7 @@ def process_alert_events(
     send_func: Callable[[str], dict[str, Any]] = telegram_send_message,
     dry_run: bool | None = None,
     enabled: bool | None = None,
+    output_locale: OutputLocale | str | None = None,
 ) -> list[AlertRunItem]:
     output_dir.mkdir(parents=True, exist_ok=True)
     memory_path = output_dir / ALERT_MEMORY_NAME
@@ -71,11 +73,14 @@ def process_alert_events(
     engine = FionaAlertEngine(LifecycleManager(memory.event_memory))
     dry = alert_dry_run() if dry_run is None else dry_run
     active = alert_enabled() if enabled is None else enabled
+    locale = output_locale_from_env() if output_locale is None else (
+        output_locale if isinstance(output_locale, OutputLocale) else parse_output_locale(output_locale)
+    )
     results: list[AlertRunItem] = []
 
     for raw_event in events:
         event = engine.process(raw_event)
-        message = render_alert(event)
+        message = render_alert(event, output_locale=locale)
         should_send = active and not dry and event.push_decision == PushDecision.SEND_NOW
         reason = decision_reason(event, enabled=active, dry_run=dry)
         item = AlertRunItem(event=event, message=message, sent=False, reason=reason)

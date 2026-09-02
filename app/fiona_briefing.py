@@ -5,6 +5,22 @@ from datetime import datetime, time, timezone
 from enum import Enum
 from typing import Any, Iterable
 
+from app.fiona_locale import (
+    OutputLocale,
+    brief_strings_for_locale,
+    clean_english_text,
+    compose_safe_en_us_brief_fallback,
+    contains_cjk,
+    en_us_term,
+    english_asset_names,
+    english_event_projection,
+    english_event_view,
+    english_narrative_name,
+    english_watch_points,
+    finalize_user_visible_text,
+    format_display_timestamp,
+    parse_output_locale,
+)
 from app.fiona_types import FionaEvent, MarketDirection, NarrativeRecord, NarrativeStatus
 
 
@@ -64,9 +80,10 @@ class FionaBrief:
     linked_narrative_ids: list[str] = field(default_factory=list)
     max_body_chars: int | None = None
     intro: str = ""
+    output_locale: OutputLocale = OutputLocale.ZH_CN
 
     def body_text(self) -> str:
-        body = render_sections(self.sections, self.fiona_view)
+        body = render_sections(self.sections, self.fiona_view, self.output_locale)
         if self.max_body_chars:
             return trim_text(body, self.max_body_chars)
         return body
@@ -74,6 +91,24 @@ class FionaBrief:
     def render_text(self, include_disclaimer: bool = True) -> str:
         if self.kind == FionaBriefKind.DAILY:
             return self.render_daily_text(include_disclaimer=include_disclaimer)
+        if self.output_locale == OutputLocale.EN_US:
+            resources = brief_strings_for_locale(self.output_locale)
+            lines = [
+                self.title,
+                format_display_timestamp(self.generated_at, self.output_locale),
+                "",
+                self.intro,
+                "",
+                self.body_text(),
+            ]
+            if include_disclaimer:
+                lines.extend(["", f"[{resources.disclaimer_heading}]", resources.disclaimer])
+            rendered = sanitize_output("\n".join(line for line in lines if line is not None))
+            return finalize_user_visible_text(
+                rendered,
+                self.output_locale,
+                fallback=lambda: compose_safe_en_us_brief_fallback(self.kind.value, self.generated_at),
+            )
         lines = [
             self.title,
             f"更新时间：{self.generated_at.strftime('%Y-%m-%d %H:%M')} UTC+8",
@@ -87,6 +122,24 @@ class FionaBrief:
         return sanitize_output("\n".join(line for line in lines if line is not None))
 
     def render_daily_text(self, include_disclaimer: bool = True) -> str:
+        if self.output_locale == OutputLocale.EN_US:
+            resources = brief_strings_for_locale(self.output_locale)
+            lines = [
+                self.title,
+                format_display_timestamp(self.generated_at, self.output_locale),
+                "",
+                self.intro,
+                "",
+                self.body_text(),
+            ]
+            if include_disclaimer:
+                lines.extend(["", f"[{resources.disclaimer_heading}]", resources.disclaimer])
+            rendered = sanitize_output("\n".join(line for line in lines if line is not None))
+            return finalize_user_visible_text(
+                rendered,
+                self.output_locale,
+                fallback=lambda: compose_safe_en_us_brief_fallback(self.kind.value, self.generated_at),
+            )
         lines = [
             self.title,
             f"{self.generated_at.strftime('%Y-%m-%d %H:%M')} UTC+8",
@@ -113,6 +166,7 @@ def build_morning_brief(
     events: Iterable[FionaEvent],
     narratives: Iterable[NarrativeRecord],
     generated_at: datetime | None = None,
+    output_locale: OutputLocale | str = OutputLocale.ZH_CN,
 ) -> FionaBrief:
     source_events = list(events)
     now = normalize_now(generated_at, source_events)
@@ -120,6 +174,9 @@ def build_morning_brief(
     narrative_list = list(narratives)
     top_narrative = first_by_status(narrative_list, NarrativeStatus.CURRENT) or first_by_status(narrative_list, NarrativeStatus.EMERGING)
     top_event = event_list[0] if event_list else None
+    locale = coerce_locale(output_locale)
+    if locale == OutputLocale.EN_US:
+        return build_morning_brief_en_us(event_list, narrative_list, now, top_narrative, top_event)
     sections = [
         FionaBriefSection("Intelligence Value", compact_intelligence_value_lines(event_list, narrative_list, "Today’s Intelligence Value")),
         FionaBriefSection("Overnight Market", overnight_lines(top_narrative, top_event, event_list)[:1]),
@@ -146,6 +203,7 @@ def build_evening_brief(
     events: Iterable[FionaEvent],
     narratives: Iterable[NarrativeRecord],
     generated_at: datetime | None = None,
+    output_locale: OutputLocale | str = OutputLocale.ZH_CN,
 ) -> FionaBrief:
     source_events = list(events)
     now = normalize_now(generated_at, source_events)
@@ -154,6 +212,9 @@ def build_evening_brief(
     macro = first_category(event_list, {"macro", "regulation"})
     etf = first_category(event_list, {"etf"})
     crypto = first_asset(event_list, {"BTC", "ETH", "SOL"})
+    locale = coerce_locale(output_locale)
+    if locale == OutputLocale.EN_US:
+        return build_evening_brief_en_us(event_list, narrative_list, now, etf, macro, crypto)
     sections = [
         FionaBriefSection("Intelligence Value", compact_intelligence_value_lines(event_list, narrative_list, "Tonight’s Intelligence Value")),
         FionaBriefSection("Tonight’s Focus", evening_focus_lines(event_list)[:2]),
@@ -180,12 +241,16 @@ def build_market_news_brief(
     narratives: Iterable[NarrativeRecord],
     snapshot: dict[str, Any] | None = None,
     generated_at: datetime | None = None,
+    output_locale: OutputLocale | str = OutputLocale.ZH_CN,
 ) -> FionaBrief:
     source_events = list(events)
     now = normalize_now(generated_at, source_events)
     event_list = top_events(source_events, limit=6)
     narrative_list = list(narratives)
     current = [record for record in narrative_list if record.status == NarrativeStatus.CURRENT][:3]
+    locale = coerce_locale(output_locale)
+    if locale == OutputLocale.EN_US:
+        return build_market_news_brief_en_us(event_list, narrative_list, snapshot, now, current)
     sections = [
         FionaBriefSection("Intelligence Value", intelligence_value_lines(event_list, narrative_list, "4H Intelligence Value")),
         FionaBriefSection("Market Heat Map", heatmap_lines(snapshot) or fallback_heatmap(event_list, narrative_list)),
@@ -212,6 +277,7 @@ def build_daily_brief(
     narratives: Iterable[NarrativeRecord],
     snapshot: dict[str, Any] | None = None,
     generated_at: datetime | None = None,
+    output_locale: OutputLocale | str = OutputLocale.ZH_CN,
 ) -> FionaBrief:
     source_events = list(events)
     now = normalize_now(generated_at, source_events)
@@ -220,6 +286,9 @@ def build_daily_brief(
     top_five = [daily_event_line(event) for event in event_list] or ["暂无足够高价值事件，今日以观察为主。"]
     current = [record for record in narrative_list if record.status == NarrativeStatus.CURRENT][:3]
     emerging = [record for record in narrative_list if record.status == NarrativeStatus.EMERGING][:3]
+    locale = coerce_locale(output_locale)
+    if locale == OutputLocale.EN_US:
+        return build_daily_brief_en_us(event_list, narrative_list, snapshot, now, current, emerging)
     sections = [
         FionaBriefSection("Today’s Market Pulse", market_pulse_lines(snapshot, event_list, narrative_list)),
         FionaBriefSection("What Changed", what_changed_lines(event_list, snapshot, limit=3)),
@@ -247,11 +316,15 @@ def build_weekly_brief(
     narratives: Iterable[NarrativeRecord],
     snapshot: dict[str, Any] | None = None,
     generated_at: datetime | None = None,
+    output_locale: OutputLocale | str = OutputLocale.ZH_CN,
 ) -> FionaBrief:
     source_events = list(events)
     now = normalize_now(generated_at, source_events)
     event_list = top_events(source_events, limit=10)
     narrative_list = list(narratives)
+    locale = coerce_locale(output_locale)
+    if locale == OutputLocale.EN_US:
+        return build_weekly_brief_en_us(event_list, narrative_list, snapshot, now)
     sections = [
         FionaBriefSection("Intelligence Value", intelligence_value_lines(event_list, narrative_list, "Weekly Intelligence Value")),
         FionaBriefSection("What Changed", what_changed_lines(event_list, snapshot, limit=4)),
@@ -274,12 +347,199 @@ def build_weekly_brief(
     )
 
 
-def render_sections(sections: list[FionaBriefSection], fiona_view: str) -> str:
+def build_morning_brief_en_us(
+    events: list[FionaEvent],
+    narratives: list[NarrativeRecord],
+    generated_at: datetime,
+    top_narrative: NarrativeRecord | None,
+    top_event: FionaEvent | None,
+) -> FionaBrief:
+    resources = brief_strings_for_locale(OutputLocale.EN_US)
+    sections = [
+        FionaBriefSection(
+            en_us_term("intelligence_value"),
+            english_compact_intelligence_value_lines(events, narratives, "Today's Intelligence Value"),
+        ),
+        FionaBriefSection(en_us_term("overnight_market"), english_overnight_lines(top_narrative, top_event)),
+        FionaBriefSection(en_us_term("todays_watch"), english_watch_detail_lines(events, narratives, limit=2)),
+        FionaBriefSection(en_us_term("todays_key_events"), english_key_event_lines(events, limit=2)),
+        FionaBriefSection(en_us_term("what_changed"), english_what_changed_lines(events, limit=1)),
+        FionaBriefSection(en_us_term("risk_radar"), english_risk_radar_lines(events, narratives)),
+    ]
+    return FionaBrief(
+        kind=FionaBriefKind.MORNING,
+        title="Fiona Morning",
+        generated_at=generated_at,
+        sections=sections,
+        fiona_view=english_morning_view(events, narratives),
+        linked_event_ids=[event.event_id for event in events[:5]],
+        linked_narrative_ids=[record.narrative_id for record in narratives[:3]],
+        max_body_chars=None,
+        intro=resources.morning_intro,
+        output_locale=OutputLocale.EN_US,
+    )
+
+
+def build_evening_brief_en_us(
+    events: list[FionaEvent],
+    narratives: list[NarrativeRecord],
+    generated_at: datetime,
+    etf: FionaEvent | None,
+    macro: FionaEvent | None,
+    crypto: FionaEvent | None,
+) -> FionaBrief:
+    resources = brief_strings_for_locale(OutputLocale.EN_US)
+    sections = [
+        FionaBriefSection(
+            en_us_term("intelligence_value"),
+            english_compact_intelligence_value_lines(events, narratives, "Tonight's Intelligence Value"),
+        ),
+        FionaBriefSection(en_us_term("tonights_focus"), english_evening_focus_lines(events, limit=2)),
+        FionaBriefSection(en_us_term("night_risk_radar"), english_risk_watch_lines(events, narratives, limit=1)),
+        FionaBriefSection(en_us_term("etf_macro_crypto"), [english_compact_triplet(etf, macro, crypto)]),
+        FionaBriefSection(en_us_term("what_changed"), english_what_changed_lines(events, limit=1)),
+        FionaBriefSection(en_us_term("what_could_change_tonight"), english_scenario_lines(events, limit=2)),
+    ]
+    return FionaBrief(
+        kind=FionaBriefKind.EVENING,
+        title="Fiona Evening",
+        generated_at=generated_at,
+        sections=sections,
+        fiona_view=english_evening_view(events, narratives),
+        linked_event_ids=[event.event_id for event in events[:6]],
+        linked_narrative_ids=[record.narrative_id for record in narratives[:3]],
+        intro=resources.evening_intro,
+        output_locale=OutputLocale.EN_US,
+    )
+
+
+def build_market_news_brief_en_us(
+    events: list[FionaEvent],
+    narratives: list[NarrativeRecord],
+    snapshot: dict[str, Any] | None,
+    generated_at: datetime,
+    current: list[NarrativeRecord],
+) -> FionaBrief:
+    resources = brief_strings_for_locale(OutputLocale.EN_US)
+    sections = [
+        FionaBriefSection(
+            en_us_term("intelligence_value"),
+            english_intelligence_value_lines(events, narratives, "Current Intelligence Value"),
+        ),
+        FionaBriefSection(en_us_term("market_heat_map"), english_heatmap_lines(snapshot, events, narratives)),
+        FionaBriefSection(en_us_term("key_markets"), english_key_market_lines(snapshot, events)),
+        FionaBriefSection(
+            en_us_term("current_narrative"),
+            english_narrative_lines(current, resources.no_current_narrative),
+        ),
+        FionaBriefSection(en_us_term("what_changed"), english_what_changed_lines(events, limit=3)),
+        FionaBriefSection(
+            en_us_term("market_temperature"),
+            english_market_temperature_lines(snapshot, events, narratives),
+        ),
+    ]
+    return FionaBrief(
+        kind=FionaBriefKind.MARKET_NEWS,
+        title="Fiona Global Intelligence",
+        generated_at=generated_at,
+        sections=sections,
+        fiona_view=english_market_view(events, narratives),
+        linked_event_ids=[event.event_id for event in events[:6]],
+        linked_narrative_ids=[record.narrative_id for record in narratives[:5]],
+        intro=resources.market_news_intro,
+        output_locale=OutputLocale.EN_US,
+    )
+
+
+def build_daily_brief_en_us(
+    events: list[FionaEvent],
+    narratives: list[NarrativeRecord],
+    snapshot: dict[str, Any] | None,
+    generated_at: datetime,
+    current: list[NarrativeRecord],
+    emerging: list[NarrativeRecord],
+) -> FionaBrief:
+    resources = brief_strings_for_locale(OutputLocale.EN_US)
+    important = [english_daily_event_line(event) for event in events] or [resources.no_high_value_signal]
+    sections = [
+        FionaBriefSection(
+            en_us_term("todays_market_pulse"),
+            english_market_pulse_lines(snapshot, events, narratives),
+        ),
+        FionaBriefSection(en_us_term("what_changed"), english_what_changed_lines(events, limit=3)),
+        FionaBriefSection(en_us_term("important_events"), important),
+        FionaBriefSection(
+            en_us_term("current_narrative"),
+            english_narrative_lines(current, resources.no_current_narrative),
+        ),
+        FionaBriefSection(
+            en_us_term("emerging_narrative"),
+            english_narrative_lines(emerging, resources.no_emerging_narrative),
+        ),
+        FionaBriefSection(en_us_term("market_movers"), english_market_mover_lines(snapshot)),
+        FionaBriefSection(en_us_term("crypto_dashboard"), english_crypto_market_lines(snapshot, events)),
+        FionaBriefSection(en_us_term("global_markets"), english_stock_market_lines(snapshot, events)),
+        FionaBriefSection(en_us_term("next_confirmation"), english_next_confirmation_lines(events, narratives)),
+    ]
+    return FionaBrief(
+        kind=FionaBriefKind.DAILY,
+        title="Fiona Daily",
+        generated_at=generated_at,
+        sections=sections,
+        fiona_view=english_daily_view(events, narratives),
+        linked_event_ids=[event.event_id for event in events[:8]],
+        linked_narrative_ids=[record.narrative_id for record in narratives[:5]],
+        intro=resources.daily_intro,
+        output_locale=OutputLocale.EN_US,
+    )
+
+
+def build_weekly_brief_en_us(
+    events: list[FionaEvent],
+    narratives: list[NarrativeRecord],
+    snapshot: dict[str, Any] | None,
+    generated_at: datetime,
+) -> FionaBrief:
+    resources = brief_strings_for_locale(OutputLocale.EN_US)
+    sections = [
+        FionaBriefSection(
+            en_us_term("intelligence_value"),
+            english_intelligence_value_lines(events, narratives, "Weekly Intelligence Value"),
+        ),
+        FionaBriefSection(en_us_term("what_changed"), english_what_changed_lines(events, limit=4)),
+        FionaBriefSection(en_us_term("weekly_winners"), english_weekly_winner_lines(snapshot)),
+        FionaBriefSection(en_us_term("weekly_losers"), english_weekly_loser_lines(snapshot)),
+        FionaBriefSection(en_us_term("narrative_ranking"), english_weekly_narrative_lines(narratives)),
+        FionaBriefSection(en_us_term("capital_flow"), english_weekly_capital_flow_lines(snapshot, events)),
+        FionaBriefSection(en_us_term("false_narrative_watchlist"), english_false_narrative_lines(narratives)),
+        FionaBriefSection(en_us_term("next_week_scenario"), english_next_week_scenario_lines(events, narratives)),
+    ]
+    return FionaBrief(
+        kind=FionaBriefKind.WEEKLY,
+        title="Fiona Weekly",
+        generated_at=generated_at,
+        sections=sections,
+        fiona_view=english_weekly_view(events, narratives),
+        linked_event_ids=[event.event_id for event in events[:10]],
+        linked_narrative_ids=[record.narrative_id for record in narratives[:8]],
+        intro=resources.weekly_intro,
+        output_locale=OutputLocale.EN_US,
+    )
+
+
+def render_sections(
+    sections: list[FionaBriefSection],
+    fiona_view: str,
+    output_locale: OutputLocale | str = OutputLocale.ZH_CN,
+) -> str:
+    locale = coerce_locale(output_locale)
     lines: list[str] = []
     for section in sections:
-        lines.append(f"【{section.title}】")
+        lines.append(f"[{section.title.upper()}]" if locale == OutputLocale.EN_US else f"【{section.title}】")
         lines.extend(compact_missing_lines(normalize_bullets(section.lines)))
-    lines.extend(["【Fiona’s View】", fiona_view])
+        if locale == OutputLocale.EN_US:
+            lines.append("")
+    lines.extend([f"[{en_us_term('fiona_view').upper()}]" if locale == OutputLocale.EN_US else "【Fiona’s View】", fiona_view])
     return "\n".join(lines)
 
 
@@ -291,6 +551,704 @@ def normalize_bullets(lines: list[str]) -> list[str]:
             continue
         normalized.append(stripped if stripped.startswith(("•", "【")) else f"• {stripped}")
     return normalized
+
+
+def coerce_locale(value: OutputLocale | str) -> OutputLocale:
+    return value if isinstance(value, OutputLocale) else parse_output_locale(value)
+
+
+def english_intelligence_value_lines(
+    events: list[FionaEvent],
+    narratives: list[NarrativeRecord],
+    label: str,
+) -> list[str]:
+    return [
+        f"{label}: {intelligence_value(events, narratives)} / 100",
+        f"{en_us_term('confidence')}: {confidence_value(events, narratives)}%",
+    ]
+
+
+def english_compact_intelligence_value_lines(
+    events: list[FionaEvent],
+    narratives: list[NarrativeRecord],
+    label: str,
+) -> list[str]:
+    return [
+        f"{label}: {intelligence_value(events, narratives)} / 100 | "
+        f"{en_us_term('confidence')}: {confidence_value(events, narratives)}%"
+    ]
+
+
+def english_overnight_lines(
+    narrative: NarrativeRecord | None,
+    event: FionaEvent | None,
+) -> list[str]:
+    lines: list[str] = []
+    if narrative is not None:
+        name = english_narrative_name(narrative.narrative_id, narrative.name, narrative.category)
+        lines.append(
+            f"{name} remains the leading overnight narrative. Direction: {narrative.direction.value}. "
+            "Its relevance depends on whether capital and price action confirm one another."
+        )
+    if event is not None:
+        what, why, _ = english_event_projection(event)
+        lines.append(f"{what} Why it matters: {why}")
+    return unique(lines)[:2] or [
+        "No high-value overnight theme formed. Fund flows remain the first confirmation variable."
+    ]
+
+
+def english_watch_detail_lines(
+    events: list[FionaEvent],
+    narratives: list[NarrativeRecord],
+    limit: int = 3,
+) -> list[str]:
+    lines: list[str] = []
+    for event in events:
+        _, why, _ = english_event_projection(event)
+        watch = english_watch_points(event, limit=1)[0]
+        lines.append(f"{watch} Why it matters: {why}")
+    for record in narratives:
+        if record.status in {NarrativeStatus.CURRENT, NarrativeStatus.EMERGING}:
+            name = english_narrative_name(record.narrative_id, record.name, record.category)
+            lines.append(
+                f"Whether {name} receives capital-flow confirmation. "
+                "Why it matters: attention alone does not establish a durable market theme."
+            )
+    return unique(lines)[:limit] or [
+        "Whether flows, macro data, and risk assets move together. "
+        "Why it matters: alignment is stronger evidence than an isolated headline."
+    ]
+
+
+def english_key_event_lines(events: list[FionaEvent], limit: int = 3) -> list[str]:
+    lines: list[str] = []
+    for event in events:
+        if event.category.value not in {"macro", "regulation", "etf", "risk"}:
+            continue
+        if event.intelligence_score < 55:
+            continue
+        what, _, watch = english_event_projection(event)
+        lines.append(f"{event.category.value.upper()}: {what} Next confirmation: {watch}")
+    return unique(lines)[:limit] or [brief_strings_for_locale(OutputLocale.EN_US).no_key_event]
+
+
+def english_what_changed_lines(events: list[FionaEvent], limit: int = 3) -> list[str]:
+    lines: list[str] = []
+    for event in events[:limit]:
+        what, why, watch = english_event_projection(event)
+        lines.append(f"{what} Why it matters: {why} Next confirmation: {watch}")
+    return unique(lines)[:limit] or [brief_strings_for_locale(OutputLocale.EN_US).no_material_change]
+
+
+def english_risk_radar_lines(events: list[FionaEvent], narratives: list[NarrativeRecord]) -> list[str]:
+    bearish = [event for event in events if event.market_direction == MarketDirection.BEARISH]
+    false_records = [record for record in narratives if record.status == NarrativeStatus.FALSE]
+    level = "High" if any(event.level.value == "S" for event in bearish) else "Medium" if bearish or false_records else "Low"
+    sources = english_risk_sources(events, false_records)
+    return [f"Current risk level: {level}", f"Primary sources: {sources}"]
+
+
+def english_risk_sources(events: list[FionaEvent], false_records: list[NarrativeRecord]) -> str:
+    labels = {
+        "macro": "Macro",
+        "etf": "ETF",
+        "price": "Crypto",
+        "risk": "Liquidity",
+        "regulation": "Policy",
+        "rwa": "RWA",
+        "institution": "Institutional activity",
+        "onchain": "On-chain flows",
+    }
+    sources = [
+        labels.get(event.category.value, event.category.value.title())
+        for event in events
+        if event.market_direction == MarketDirection.BEARISH
+    ]
+    if false_records:
+        sources.append("Narrative quality")
+    return " / ".join(unique(sources)[:3]) or "No concentrated risk"
+
+
+def english_evening_focus_lines(events: list[FionaEvent], limit: int = 3) -> list[str]:
+    high_value = [event for event in events if event.level.value in {"S", "A"} or event.intelligence_score >= 60]
+    if not high_value:
+        return ["No new Critical or High event. Monitor fund flows and changes in risk appetite."]
+    lines = []
+    for event in high_value[:limit]:
+        what, why, watch = english_event_projection(event)
+        lines.append(f"{what} Why it matters: {why} Next confirmation: {watch}")
+    return lines
+
+
+def english_risk_watch_lines(
+    events: list[FionaEvent],
+    narratives: list[NarrativeRecord],
+    limit: int = 3,
+) -> list[str]:
+    risks: list[str] = []
+    for event in events:
+        if event.market_direction == MarketDirection.BEARISH:
+            what, _, _ = english_event_projection(event)
+            risks.append(f"{what} {english_watch_points(event, limit=1)[0]}")
+    for record in narratives:
+        if record.status == NarrativeStatus.FALSE:
+            name = english_narrative_name(record.narrative_id, record.name, record.category)
+            risks.append(f"{name}: verify whether attention is supported by capital and persistence.")
+    return unique(risks)[:limit] or [brief_strings_for_locale(OutputLocale.EN_US).no_concentrated_risk]
+
+
+def english_compact_triplet(
+    etf: FionaEvent | None,
+    macro: FionaEvent | None,
+    crypto: FionaEvent | None,
+) -> str:
+    return " | ".join(
+        [
+            f"ETF: {english_short_event(etf)}",
+            f"Macro: {english_short_event(macro)}",
+            f"Crypto: {english_short_event(crypto)}",
+        ]
+    )
+
+
+def english_short_event(event: FionaEvent | None) -> str:
+    if event is None:
+        return brief_strings_for_locale(OutputLocale.EN_US).no_high_value_signal
+    what, _, _ = english_event_projection(event)
+    return trim_text(what, 76)
+
+
+def english_scenario_lines(events: list[FionaEvent], limit: int = 3) -> list[str]:
+    lines: list[str] = []
+    if first_category(events, {"etf"}) is not None:
+        lines.append(
+            "If ETF flows improve, crypto risk appetite may stabilize; confirmation requires persistent net inflows."
+        )
+    else:
+        lines.append(
+            "If ETF participation remains absent, crypto strength may remain price-led; confirmation requires fund flows."
+        )
+    if first_category(events, {"macro", "regulation"}) is not None:
+        lines.append(
+            "If the dollar and Treasury yields rise together, risk assets may face broader pressure; verify cross-market alignment."
+        )
+    crypto_event = first_asset(events, {"BTC", "ETH", "SOL"})
+    if crypto_event is not None:
+        assets = ", ".join(english_asset_names(crypto_event.affected_assets)[:3]) or "major crypto assets"
+        lines.append(
+            f"If volatility spreads across {assets}, night-session risk will be broader; verify whether volume expands."
+        )
+    return unique(lines)[:limit]
+
+
+def english_daily_event_line(event: FionaEvent) -> str:
+    what, _, _ = english_event_projection(event)
+    watch = english_watch_points(event, limit=1)[0]
+    return (
+        f"{what} | Importance: {event.intelligence_score}/100 | "
+        f"Direction: {event.market_direction.value} | Next confirmation: {watch}"
+    )
+
+
+def english_narrative_lines(records: list[NarrativeRecord], empty: str) -> list[str]:
+    if not records:
+        return [empty]
+    return [
+        (
+            f"{english_narrative_name(record.narrative_id, record.name, record.category)} | "
+            f"Direction: {record.direction.value} | Confidence: {record.confidence_score}/100"
+        )
+        for record in records[:3]
+    ]
+
+
+def english_market_pulse_lines(
+    snapshot: dict[str, Any] | None,
+    events: list[FionaEvent],
+    narratives: list[NarrativeRecord],
+) -> list[str]:
+    temperature = market_temperature(snapshot, events, narratives)
+    appetite = risk_appetite(temperature, events)
+    liquidity = liquidity_state(snapshot)
+    strength = narrative_strength(narratives)
+    return [
+        f"Today's Intelligence Value: {intelligence_value(events, narratives)} / 100",
+        f"Market Temperature: {temperature} / 100",
+        f"Risk Appetite: {appetite}",
+        f"Liquidity: {liquidity}",
+        f"Volatility: {volatility_state(events)}",
+        f"Confidence: {confidence_value(events, narratives)}%",
+        f"Summary: {english_market_temperature_summary(temperature, appetite, liquidity, strength)}",
+    ]
+
+
+def english_market_temperature_lines(
+    snapshot: dict[str, Any] | None,
+    events: list[FionaEvent],
+    narratives: list[NarrativeRecord],
+) -> list[str]:
+    temperature = market_temperature(snapshot, events, narratives)
+    appetite = risk_appetite(temperature, events)
+    liquidity = liquidity_state(snapshot)
+    strength = narrative_strength(narratives)
+    return [
+        f"Current Market Temperature: {temperature} / 100",
+        f"Risk Appetite: {appetite}",
+        f"Liquidity: {liquidity}",
+        f"Narrative Strength: {strength}",
+        f"Summary: {english_market_temperature_summary(temperature, appetite, liquidity, strength)}",
+    ]
+
+
+def english_market_temperature_summary(temperature: int, appetite: str, liquidity: str, strength: str) -> str:
+    if temperature >= 70 and appetite == "High":
+        return "Risk appetite is firm, but continued fund-flow confirmation remains necessary."
+    if appetite == "Low":
+        return "The market remains defensive while liquidity and narrative signals await confirmation."
+    if strength == "Weak":
+        return "The market remains range-bound and lacks a high-confidence narrative."
+    return f"Market conditions are neutral, with {liquidity.lower()} liquidity and {strength.lower()} narrative strength."
+
+
+def english_heatmap_lines(
+    snapshot: dict[str, Any] | None,
+    events: list[FionaEvent],
+    narratives: list[NarrativeRecord],
+) -> list[str]:
+    if snapshot and isinstance(snapshot.get("heatmap"), list):
+        labels = {
+            "us": "US Market",
+            "china": "China Market",
+            "crypto": "Crypto Market",
+            "rwa": "RWA Market",
+        }
+        lines: list[str] = []
+        for card in snapshot.get("heatmap", []):
+            if not isinstance(card, dict):
+                continue
+            key = str(card.get("key", "")).lower()
+            label = labels.get(key, clean_english_text(str(card.get("label", ""))) or "Market")
+            score = card.get("score", "-")
+            status = english_market_status(card.get("status"))
+            lines.append(f"{label}: {score}/100 | {status}")
+        if lines:
+            return lines[:4]
+    direction = dominant_event_direction(events)
+    score = round(sum(event.intelligence_score for event in events[:5]) / max(1, len(events[:5]))) if events else 50
+    name = (
+        english_narrative_name(narratives[0].narrative_id, narratives[0].name, narratives[0].category)
+        if narratives
+        else "No confirmed narrative"
+    )
+    return [f"Market: {score}/100 | {direction.value} | Narrative: {name}"]
+
+
+def english_market_status(value: Any) -> str:
+    normalized = str(value or "Neutral").strip().lower()
+    return {"bullish": "Bullish", "bearish": "Bearish", "neutral": "Neutral"}.get(normalized, "Neutral")
+
+
+def english_key_market_lines(snapshot: dict[str, Any] | None, events: list[FionaEvent]) -> list[str]:
+    if not snapshot:
+        return [english_asset_summary_line(events)]
+    us = snapshot.get("us_market") if isinstance(snapshot.get("us_market"), dict) else {}
+    china = snapshot.get("china_market") if isinstance(snapshot.get("china_market"), dict) else {}
+    crypto = snapshot.get("crypto_market") if isinstance(snapshot.get("crypto_market"), dict) else {}
+    rwa = snapshot.get("rwa_market") if isinstance(snapshot.get("rwa_market"), dict) else {}
+    return [
+        f"US: {english_primary_market_line(us, 'S&P 500')}",
+        f"China: {english_primary_market_line(china, 'CSI 500')}",
+        f"Crypto: {english_crypto_primary_line(crypto)}",
+        f"RWA: {english_rwa_primary_line(rwa)}",
+    ]
+
+
+def english_primary_market_line(market: dict[str, Any], fallback_name: str) -> str:
+    primary = market.get("primary") if isinstance(market.get("primary"), dict) else {}
+    raw_name = clean_english_text(str(primary.get("name", "")))
+    name = raw_name or fallback_name
+    return f"{name} {format_number(primary.get('price'))}, {format_pct(primary.get('change_pct'))}"
+
+
+def english_crypto_primary_line(crypto: dict[str, Any]) -> str:
+    btc = crypto.get("btc") if isinstance(crypto.get("btc"), dict) else {}
+    eth = crypto.get("eth") if isinstance(crypto.get("eth"), dict) else {}
+    return (
+        f"BTC {format_number(btc.get('current_price') or btc.get('price'))}, "
+        f"{format_pct(first_present(btc.get('price_change_percentage_24h'), btc.get('change_pct')))}; "
+        f"ETH {format_number(eth.get('current_price') or eth.get('price'))}, "
+        f"{format_pct(first_present(eth.get('price_change_percentage_24h'), eth.get('change_pct')))}"
+    )
+
+
+def english_rwa_primary_line(rwa: dict[str, Any]) -> str:
+    tvl = rwa.get("tvl") if isinstance(rwa.get("tvl"), dict) else {}
+    market_cap = rwa.get("market_cap") if isinstance(rwa.get("market_cap"), dict) else {}
+    volume = rwa.get("volume") if isinstance(rwa.get("volume"), dict) else {}
+    flow = rwa.get("capital_flow") if isinstance(rwa.get("capital_flow"), dict) else {}
+    return (
+        f"TVL {format_money(tvl.get('value'))}; MCAP {format_money(market_cap.get('value'))}; "
+        f"Flow {format_money(first_present(flow.get('value'), volume.get('change_24h')))}"
+    )
+
+
+def english_market_mover_lines(snapshot: dict[str, Any] | None) -> list[str]:
+    if not snapshot:
+        return [brief_strings_for_locale(OutputLocale.EN_US).missing_summary]
+    us = snapshot.get("us_market") if isinstance(snapshot.get("us_market"), dict) else {}
+    china = snapshot.get("china_market") if isinstance(snapshot.get("china_market"), dict) else {}
+    crypto = snapshot.get("crypto_market") if isinstance(snapshot.get("crypto_market"), dict) else {}
+    ranking = crypto.get("top100_ranking") if isinstance(crypto.get("top100_ranking"), dict) else {}
+    lines = [
+        f"US Gainers: {english_ranking_line(us.get('top_gainers'), 5)}",
+        f"US Losers: {english_ranking_line(us.get('top_losers'), 5)}",
+        f"US Volume Leaders: {english_ranking_line(us.get('top_traded'), 5)}",
+        f"China Gainers: {english_ranking_line(china.get('top_gainers'), 5)}",
+        f"China Losers: {english_ranking_line(china.get('top_losers'), 5)}",
+        f"China Volume Leaders: {english_ranking_line(china.get('top_traded'), 5)}",
+        f"Crypto Gainers: {english_ranking_line(ranking.get('gainers'), 5)}",
+        f"Crypto Losers: {english_ranking_line(ranking.get('losers'), 5)}",
+    ]
+    return compact_english_missing_lines(lines)
+
+
+def english_crypto_market_lines(snapshot: dict[str, Any] | None, events: list[FionaEvent]) -> list[str]:
+    if not snapshot:
+        return [english_asset_summary_line(events)]
+    crypto = snapshot.get("crypto_market") if isinstance(snapshot.get("crypto_market"), dict) else {}
+    rwa = snapshot.get("rwa_market") if isinstance(snapshot.get("rwa_market"), dict) else {}
+    stable = crypto.get("stablecoin_growth") if isinstance(crypto.get("stablecoin_growth"), dict) else {}
+    top100 = crypto.get("top100") if isinstance(crypto.get("top100"), list) else []
+    daily_assets = crypto.get("daily_assets") if isinstance(crypto.get("daily_assets"), dict) else {}
+    lines = [
+        (
+            f"Stablecoin: {english_money_or_unavailable(stable.get('current'))} | "
+            f"24h {english_pct_or_unavailable(stable.get('change_1d'))} | "
+            "Confirmation: whether supply supports risk appetite."
+        ),
+        f"RWA: {english_rwa_flow_line(rwa)}",
+    ]
+    for symbol in ("BTC", "ETH", "SOL", "BNB", "HYPE", "UNI"):
+        lines.append(english_crypto_asset_line(symbol, crypto_asset_lookup(crypto, top100, daily_assets, symbol)))
+    return compact_english_missing_lines(lines)
+
+
+def english_stock_market_lines(snapshot: dict[str, Any] | None, events: list[FionaEvent]) -> list[str]:
+    if not snapshot:
+        return [english_asset_summary_line(events)]
+    us = snapshot.get("us_market") if isinstance(snapshot.get("us_market"), dict) else {}
+    china = snapshot.get("china_market") if isinstance(snapshot.get("china_market"), dict) else {}
+    daily_market = snapshot.get("daily_market") if isinstance(snapshot.get("daily_market"), dict) else {}
+    quotes = daily_market.get("quotes") if isinstance(daily_market.get("quotes"), list) else []
+    lines = [
+        f"DJI: {english_quote_brief(find_quote(us.get('indices'), 'DJI', 'Dow Jones'))}",
+        f"IXIC: {english_quote_brief(find_quote(us.get('indices'), 'IXIC', 'Nasdaq'))}",
+        f"SPX: {english_quote_brief(find_quote(us.get('indices'), 'GSPC', 'S&P 500'))}",
+        f"HSI: {english_quote_brief(find_quote(quotes, 'HSI', 'HSI'))}",
+        f"SSE: {english_quote_brief(find_quote(china.get('indices'), '000001', 'SSE'))}",
+        f"GOLD: {english_quote_brief(find_quote(quotes, 'GC=F', 'GOLD'))}",
+        f"SILVER: {english_quote_brief(find_quote(quotes, 'SI=F', 'SILVER'))}",
+        f"USOIL: {english_quote_brief(find_quote(quotes, 'CL=F', 'USOIL'))}",
+        f"UKOIL: {english_quote_brief(find_quote(quotes, 'BZ=F', 'UKOIL'))}",
+    ]
+    return compact_english_missing_lines(lines)
+
+
+def english_rwa_flow_line(rwa: dict[str, Any]) -> str:
+    market_cap = rwa.get("market_cap") if isinstance(rwa.get("market_cap"), dict) else {}
+    tvl = rwa.get("tvl") if isinstance(rwa.get("tvl"), dict) else {}
+    volume = rwa.get("volume") if isinstance(rwa.get("volume"), dict) else {}
+    flow = rwa.get("capital_flow") if isinstance(rwa.get("capital_flow"), dict) else {}
+    return (
+        f"TVL {english_money_or_unavailable(tvl.get('value'))} | "
+        f"MCAP {english_money_or_unavailable(market_cap.get('value'))} | "
+        f"Volume {english_money_or_unavailable(volume.get('value'))} | "
+        f"Flow {english_money_or_unavailable(flow.get('value'))}"
+    )
+
+
+def english_crypto_asset_line(symbol: str, asset: dict[str, Any] | None) -> str:
+    if not asset:
+        return f"{symbol}: Data unavailable"
+    price = first_present(asset.get("price"), asset.get("current_price"))
+    change = first_present(asset.get("change_pct"), asset.get("price_change_percentage_24h"))
+    return (
+        f"{symbol}: {english_price_or_unavailable(price)} | "
+        f"Market cap {english_money_or_unavailable(asset.get('market_cap'))} | "
+        f"24h {english_pct_or_unavailable(change)} | Confirmation: flows and volume."
+    )
+
+
+def english_quote_brief(quote: dict[str, Any] | None) -> str:
+    if not quote:
+        return "Data unavailable"
+    return f"{english_number_or_unavailable(quote.get('price'))}, 24h {english_pct_or_unavailable(quote.get('change_pct'))}"
+
+
+def english_weekly_winner_lines(snapshot: dict[str, Any] | None) -> list[str]:
+    if not snapshot:
+        return [brief_strings_for_locale(OutputLocale.EN_US).missing_summary]
+    crypto = snapshot.get("crypto_market") if isinstance(snapshot.get("crypto_market"), dict) else {}
+    ranking = crypto.get("top100_ranking") if isinstance(crypto.get("top100_ranking"), dict) else {}
+    us = snapshot.get("us_market") if isinstance(snapshot.get("us_market"), dict) else {}
+    return [
+        f"US Winners: {english_ranking_line(us.get('top_gainers'), 5)}",
+        f"Crypto Winners: {english_ranking_line(ranking.get('gainers'), 5)}",
+    ]
+
+
+def english_weekly_loser_lines(snapshot: dict[str, Any] | None) -> list[str]:
+    if not snapshot:
+        return [brief_strings_for_locale(OutputLocale.EN_US).missing_summary]
+    crypto = snapshot.get("crypto_market") if isinstance(snapshot.get("crypto_market"), dict) else {}
+    ranking = crypto.get("top100_ranking") if isinstance(crypto.get("top100_ranking"), dict) else {}
+    us = snapshot.get("us_market") if isinstance(snapshot.get("us_market"), dict) else {}
+    return [
+        f"US Losers: {english_ranking_line(us.get('top_losers'), 5)}",
+        f"Crypto Losers: {english_ranking_line(ranking.get('losers'), 5)}",
+    ]
+
+
+def english_weekly_narrative_lines(narratives: list[NarrativeRecord]) -> list[str]:
+    resources = brief_strings_for_locale(OutputLocale.EN_US)
+    current = [record for record in narratives if record.status == NarrativeStatus.CURRENT][:3]
+    emerging = [record for record in narratives if record.status == NarrativeStatus.EMERGING][:3]
+    fading = [record for record in narratives if record.status == NarrativeStatus.FADING][:3]
+    false_records = [record for record in narratives if record.status == NarrativeStatus.FALSE][:3]
+    return [
+        f"Current Narrative: {english_narrative_summary(current)}",
+        f"Emerging Narrative: {english_narrative_summary(emerging)}",
+        f"Fading Narrative: {english_narrative_summary(fading)}",
+        (
+            "False Narrative Watchlist: "
+            + ("; ".join(english_false_narrative_line(record) for record in false_records) if false_records else resources.no_false_narrative)
+        ),
+    ]
+
+
+def english_narrative_summary(records: list[NarrativeRecord]) -> str:
+    if not records:
+        return "No high-confidence narrative."
+    return "; ".join(
+        (
+            f"{english_narrative_name(record.narrative_id, record.name, record.category)} / "
+            f"{record.direction.value} / Confidence {record.confidence_score}/100"
+        )
+        for record in records[:3]
+    )
+
+
+def english_weekly_capital_flow_lines(snapshot: dict[str, Any] | None, events: list[FionaEvent]) -> list[str]:
+    if not snapshot:
+        return [english_asset_summary_line(events)]
+    selected = english_crypto_market_lines(snapshot, events)[:4]
+    selected.append(f"Major Assets: {english_asset_summary_line(events).replace('Affected assets: ', '')}")
+    return selected
+
+
+def english_false_narrative_lines(narratives: list[NarrativeRecord]) -> list[str]:
+    records = [record for record in narratives if record.status == NarrativeStatus.FALSE][:5]
+    if not records:
+        return [brief_strings_for_locale(OutputLocale.EN_US).no_false_narrative]
+    return [english_false_narrative_line(record) for record in records]
+
+
+def english_false_narrative_line(record: NarrativeRecord) -> str:
+    name = english_narrative_name(record.narrative_id, record.name, record.category)
+    reason = (
+        "Attention is elevated, but fund-flow and persistence confirmation remain insufficient."
+        if record.funds_score < 50 or record.persistence_score < 50
+        else "The theme still requires broader cross-market confirmation."
+    )
+    return (
+        f"{name} | Heat {record.mention_count} | Money Flow {record.funds_score} | "
+        f"Persistence {record.persistence_score} | Confidence {record.confidence_score} | {reason}"
+    )
+
+
+def english_next_week_scenario_lines(
+    events: list[FionaEvent],
+    narratives: list[NarrativeRecord],
+) -> list[str]:
+    direction = dominant_event_direction(events)
+    strength = narrative_strength(narratives)
+    if direction == MarketDirection.BEARISH:
+        bullish, neutral, bearish = 25, 50, 25
+    elif direction == MarketDirection.BULLISH:
+        bullish, neutral, bearish = 40, 45, 15
+    else:
+        bullish, neutral, bearish = 35, 50, 15
+    if strength == "Weak":
+        neutral += 5
+        bullish -= 3
+        bearish -= 2
+    return [
+        f"Bullish: {bullish}%",
+        f"Neutral: {neutral}%",
+        f"Bearish: {bearish}%",
+        "This is Fiona's probability assessment of market conditions, not a price forecast.",
+    ]
+
+
+def english_next_confirmation_lines(
+    events: list[FionaEvent],
+    narratives: list[NarrativeRecord],
+    limit: int = 3,
+) -> list[str]:
+    points: list[str] = []
+    for event in events:
+        points.extend(english_watch_points(event, limit=1))
+    for record in narratives:
+        if record.status in {NarrativeStatus.CURRENT, NarrativeStatus.EMERGING}:
+            name = english_narrative_name(record.narrative_id, record.name, record.category)
+            points.append(f"Whether {name} continues to receive fund-flow confirmation.")
+    return unique(points)[:limit] or [
+        "Whether fund flows, macro data, and regulatory signals move in the same direction."
+    ]
+
+
+def english_morning_view(events: list[FionaEvent], narratives: list[NarrativeRecord]) -> str:
+    current = first_by_status(narratives, NarrativeStatus.CURRENT) or first_by_status(narratives, NarrativeStatus.EMERGING)
+    risk = english_risk_radar_lines(events, narratives)[0].replace("Current risk level: ", "")
+    if current is not None:
+        name = english_narrative_name(current.narrative_id, current.name, current.category)
+        return (
+            f"Before markets become active, the key question is whether {name} receives fund-flow confirmation. "
+            f"Current risk is {risk.lower()}. Macro conditions, ETF flows, and core assets still need to align before the signal becomes durable."
+        )
+    return (
+        f"No dominant theme is confirmed this morning, and current risk is {risk.lower()}. "
+        "The next useful evidence is whether flows, macro data, and major risk assets begin to move together."
+    )
+
+
+def english_evening_view(events: list[FionaEvent], narratives: list[NarrativeRecord]) -> str:
+    current = first_by_status(narratives, NarrativeStatus.CURRENT)
+    direction = dominant_event_direction(events).value.lower()
+    if current is not None:
+        name = english_narrative_name(current.narrative_id, current.name, current.category)
+        return (
+            f"Tonight's evidence is {direction}, with {name} still the main narrative under review. "
+            "The signal becomes more credible only if ETF flows, macro markets, and crypto price action confirm one another."
+        )
+    return (
+        "No dominant night-session theme is confirmed. Fiona is watching for unusual fund flows, a material change in macro expectations, "
+        "or crypto volatility that spreads into technology equities and RWA assets."
+    )
+
+
+def english_daily_view(events: list[FionaEvent], narratives: list[NarrativeRecord]) -> str:
+    current = first_by_status(narratives, NarrativeStatus.CURRENT)
+    direction = dominant_event_direction(events).value.lower()
+    if current is not None:
+        name = english_narrative_name(current.narrative_id, current.name, current.category)
+        return (
+            f"Today's market state is {direction}, with {name} as the main driver under review. "
+            "The next cycle needs confirmation from ETF or stablecoin flows, macro conditions, and correlated asset behavior. "
+            "If those signals remain divided, Fiona will treat the move as incomplete rather than a durable market theme."
+        )
+    if events:
+        return (
+            f"Today's evidence is {direction}, but the market has not converged on a durable narrative. "
+            "Macro conditions, fund flows, and crypto volatility remain the principal drivers. "
+            "The next confirmation is whether those signals begin to align across markets."
+        )
+    return (
+        "No high-value theme formed today. The market remains in a waiting state, with fund flows, macro data, "
+        "and risk events serving as the next confirmation variables."
+    )
+
+
+def english_weekly_view(events: list[FionaEvent], narratives: list[NarrativeRecord]) -> str:
+    current = first_by_status(narratives, NarrativeStatus.CURRENT)
+    false_count = sum(1 for record in narratives if record.status == NarrativeStatus.FALSE)
+    if current is not None:
+        name = english_narrative_name(current.narrative_id, current.name, current.category)
+        return (
+            f"This week's leading narrative was {name}, but durability depends on flows, policy expectations, and cross-market confirmation. "
+            f"Next week, Fiona will test whether the theme broadens across assets while monitoring {false_count} potential false-narrative signal(s). "
+            "High attention without persistent capital will remain a weak form of evidence."
+        )
+    return (
+        f"This week's narratives remained fragmented, with {false_count} potential false-narrative signal(s) under review. "
+        "Next week's priority is whether fund flows, macro data, and crypto risk appetite establish a consistent direction."
+    )
+
+
+def english_market_view(events: list[FionaEvent], narratives: list[NarrativeRecord]) -> str:
+    current = first_by_status(narratives, NarrativeStatus.CURRENT)
+    direction = dominant_event_direction(events).value.lower()
+    if current is not None:
+        name = english_narrative_name(current.narrative_id, current.name, current.category)
+        return (
+            f"Current evidence is {direction}, with {name} as the leading narrative. "
+            "Fiona is prioritizing confirmation from fund flows and correlated markets over isolated price moves."
+        )
+    return (
+        f"Current evidence is {direction}, but no high-confidence narrative is established. "
+        "Fund flows and cross-market alignment remain the next confirmation variables."
+    )
+
+
+def english_asset_summary_line(events: list[FionaEvent]) -> str:
+    assets: list[str] = []
+    for event in events:
+        assets.extend(english_asset_names(event.affected_assets))
+    return f"Affected assets: {', '.join(unique(assets)[:8]) if assets else 'Market'}"
+
+
+def english_ranking_line(rows: Any, limit: int = 3) -> str:
+    if not isinstance(rows, list) or not rows:
+        return "Data unavailable"
+    output: list[str] = []
+    for row in rows[:limit]:
+        if not isinstance(row, dict):
+            continue
+        raw_symbol = row.get("symbol") or row.get("code") or row.get("name") or "Asset"
+        symbol = clean_english_text(str(raw_symbol)) or "Asset"
+        change = first_present(row.get("change_pct"), row.get("price_change_percentage_24h"))
+        output.append(f"{symbol.upper()} {format_pct(change)}")
+    return ", ".join(output) if output else "Data unavailable"
+
+
+def compact_english_missing_lines(lines: list[str]) -> list[str]:
+    missing = [line for line in lines if "Data unavailable" in line]
+    if len(missing) <= 3:
+        return lines
+    available = [line for line in lines if "Data unavailable" not in line]
+    available.append(brief_strings_for_locale(OutputLocale.EN_US).missing_summary)
+    return available
+
+
+def english_number_or_unavailable(value: Any) -> str:
+    return "Data unavailable" if safe_float(value) is None else format_number(value)
+
+
+def english_price_or_unavailable(value: Any) -> str:
+    number = safe_float(value)
+    if number is None:
+        return "Data unavailable"
+    if abs(number) >= 1000:
+        return f"${number:,.2f}"
+    if abs(number) >= 1:
+        return f"${number:.2f}"
+    return f"${number:.6f}"
+
+
+def english_money_or_unavailable(value: Any) -> str:
+    return "Data unavailable" if safe_float(value) is None else format_money(value)
+
+
+def english_pct_or_unavailable(value: Any) -> str:
+    return "Data unavailable" if safe_float(value) is None else format_pct(value)
+
+
+def first_present(*values: Any) -> Any:
+    for value in values:
+        if value not in (None, ""):
+            return value
+    return None
 
 
 def top_events(events: Iterable[FionaEvent], limit: int) -> list[FionaEvent]:

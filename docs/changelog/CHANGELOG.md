@@ -1,9 +1,43 @@
 # Fiona Version Changelog
 
-版本：V3.1-alpha.1
-状态：Gate 1 PASS WITH CONDITIONS; Production activation pending
+版本：V3.1-alpha.1.1
+状态：Gate 1.1 local PASS; Production observation pending
 负责人：Wilson  
-更新时间：2026-08-25
+更新时间：2026-09-02
+
+## V3.1-alpha.1.1 - American English Surface Completion
+
+日期：2026-09-02
+
+Commit：待 Gate 1.1 精确边界提交后由 Git 历史确认
+
+影响范围：Output Locale Boundary / Morning / Evening / Daily / Weekly / Alert / Tests / Documentation
+
+### 新增内容
+
+- 将统一 `en-US` 输出边界扩展到 Morning、Evening、Daily、Weekly、Alert、缺失数据与安全 fallback。
+- 新增共享英文术语、Alert 严重度映射、确定性事件英文投影和全用户面 CJK leakage guard。
+- 新增无 Telegram、ledger、scheduler 和正式 occurrence 副作用的全表面验证命令。
+
+### 修复内容
+
+- 修复 runtime 仅在 Market News 分支读取 `FIONA_OUTPUT_LOCALE`，导致其他生产消息继续输出中文或双语的问题。
+- 修复 en-US 模式下 snapshot 构建失败时缺少安全英文 fallback 的问题。
+
+### 优化内容
+
+- 时间统一为 `SEP 02 · 20:00 UTC+8` 样式，免责声明统一为简短 en-US 版本。
+- 中文源事实与 provenance 保持原样，用户面改用保守的分类规则生成英文，不引入外部翻译服务。
+
+### 删除内容
+
+- 未删除生产代码、中文 legacy 模式、来源、任务、Alert 阈值、ledger 或 Telegram 能力。
+
+### 影响范围
+
+- `FIONA_OUTPUT_LOCALE=en-US` 下的剩余生产用户面将随部署立即切换为英文。
+- Scheduler、cadence、coverage、delta、Railway Variables 与 Telegram transport 语义不变。
+- Gate 2 未开始。
 
 ## V3.1-alpha.1 - Native Telegram Photo + American English
 

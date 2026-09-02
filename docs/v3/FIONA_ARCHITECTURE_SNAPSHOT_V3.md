@@ -1,9 +1,9 @@
 # Fiona Architecture Snapshot - Visual V3 / Design System 1.0
 
-- Version: V3.0.0 Production / V3.1-alpha.1 optional profile
-- Status: Production baseline plus legacy-safe alpha extension
+- Version: V3.0.0 Production / V3.1-alpha.1.1 release candidate
+- Status: Production photo + en-US baseline with full-surface language completion pending deploy
 - Owner: Fiona Engineering
-- Updated: 2026-08-05
+- Updated: 2026-09-02
 
 ## Production Pipeline
 
@@ -47,6 +47,32 @@ arbitration. It does not introduce another scheduler, ledger, or sender.
 
 V3 与 Design System 1.0 只替换 Renderer 内部的视觉表现和工程组织：布局、字体层级、色彩、间距、密度、品牌签名、tokens 与组件。Scheduler、Runtime、ViewModel contract、Caption Composer、Telegram Service、Railway command、ledger 与 arbitration 均未改变。
 
+## V3.1 Gate 1.1 Language Boundary
+
+```mermaid
+flowchart TD
+    Scheduler[Existing Scheduler] --> Runtime[run_once]
+    Runtime --> Locale[Resolve FIONA_OUTPUT_LOCALE once]
+    Runtime --> Events[Existing events, scores, narratives]
+    Events --> Briefs[Morning / Evening / Daily / Weekly]
+    Events --> Alert[Existing Alert classifier]
+    Events --> Market[Market News ViewModel]
+    Locale --> Briefs
+    Locale --> Alert
+    Locale --> Market
+    Briefs --> Guard[Final en-US CJK guard]
+    Alert --> Guard
+    Market --> Guard
+    Guard --> Service[telegram_service]
+    Service --> API[Telegram Bot API]
+```
+
+Original source-language fields remain in events, snapshot data, memory, and
+provenance. Locale projection occurs only after existing business decisions.
+No score, route, alert threshold, schedule, ledger, or delivery transport is
+changed. The final text boundary performs at most one deterministic repair and
+one safe English fallback.
+
 ## Compatibility
 
 - 输入仍为 `MarketNewsViewModel`。
@@ -56,5 +82,5 @@ V3 与 Design System 1.0 只替换 Renderer 内部的视觉表现和工程组织
 - `app/fiona_card_renderer.py` 保留旧公开 helper 的兼容 wrapper。
 - 组件只消费 ViewModel 派生输入、RenderContext 与 `FIONA_TOKENS`，不产生外部副作用。
 - `FIONA_IOS_TOKENS` 是直接 1440 x 1800 渲染 profile，不是 1080 图像放大。
-- `app/fiona_locale.py` 只负责输出边界和确定性语言资源，不承担业务判断。
-- Market News `en-US` 已接入；Morning、Evening、Daily、Weekly 与 Alert 的语言迁移仍待后续独立评审。
+- `app/fiona_locale.py` 只负责输出边界、共享术语、确定性英文投影与语言验证，不承担评分或路由判断。
+- Market News `en-US` 已在生产接入；Gate 1.1 将 Morning、Evening、Daily、Weekly 与 Alert 接入同一边界。
