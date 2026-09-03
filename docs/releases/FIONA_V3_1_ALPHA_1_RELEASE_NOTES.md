@@ -1,8 +1,9 @@
 # Fiona V3.1-alpha.1 Release Notes
 
 - Release: Native Telegram Photo + American English
-- Status: Alpha implementation; production activation not authorized
+- Status: Historical implementation record; production validated at Gate 1 closeout
 - Date: 2026-08-25
+- Closeout: 2026-09-03 (`docs/v3_1/gates/GATE_1_CLOSEOUT.md`)
 - Production baseline: V3.0.0
 
 ## Highlights
@@ -56,8 +57,11 @@ FIONA_OUTPUT_LOCALE=zh-CN
 
 No data migration is involved.
 
-## Gate Verdict
+## Gate Verdict at Implementation Time
 
 `PASS WITH CONDITIONS`: deployable behind legacy defaults; activation requires
 isolated Telegram/iOS review and explicit Product approval. Gate 2 is not
 started.
+
+Final production acceptance was completed on 2026-09-03. Gate 1 is now closed;
+the authoritative final record is `docs/v3_1/gates/GATE_1_CLOSEOUT.md`.

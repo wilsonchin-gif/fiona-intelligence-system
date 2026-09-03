@@ -1,9 +1,9 @@
 # Fiona V3.1 Release Strategy
 
 Version: V3.1-alpha.1
-Status: Gate 1 implemented behind legacy defaults; activation not authorized
+Status: Gate 1 CLOSED; Production Validated; Gate 2 not started
 Owner: Wilson / Codex
-Updated: 2026-08-25
+Updated: 2026-09-03
 
 ## 1. Release Objective
 
@@ -16,7 +16,7 @@ milestones:
 
 | Version | Scope | Production meaning |
 |---|---|---|
-| `V3.1-alpha.1` | Native Photo + `en-US` | validation only until approved |
+| `V3.1-alpha.1` | Native Photo + `en-US` | production validated; Gate 1 closed |
 | `V3.1-alpha.2` | Global Coverage Engine | Shadow only initially |
 | `V3.1-beta` | six-slot cadence + 4H Delta | simulation and controlled beta |
 | `V3.1-RC` | integrated system | release-candidate validation |
@@ -200,12 +200,13 @@ No opportunistic refactor or new product feature is permitted.
 
 ### Native Photo
 
-- Production group remains on document delivery.
-- Render 1080 and 1440 from the same ViewModel.
-- Validate image, caption, safe area, file size, and render duration locally.
-- Upload to an isolated Telegram validation chat for server-processing and iOS
-  review.
-- Do not send both variants into the production group.
+- Production uses native `photo` delivery with a short `en-US` caption.
+- The production card is rendered directly at 1440 x 1800 from the same
+  ViewModel; the legacy document path remains available for rollback.
+- Image, caption, safe area, file size, render duration, Telegram processing,
+  and real iPhone presentation have passed Gate 1 acceptance.
+- A successful occurrence sends one photo only. Explicit failure permits one
+  text fallback; unknown delivery permits no retry or second send.
 
 ### American English
 
@@ -359,8 +360,8 @@ V3.1.0 may be marked Production only after:
 
 ## 12. Current Authorization
 
-Gate 0 is closed. Gate 1 implementation has a `PASS WITH CONDITIONS` local
-verdict and may be released only with `document + zh-CN` legacy defaults. This
-document does not authorize a Railway variable change, a Telegram test message,
-`photo + en-US` activation, source integration, or Gate 2. Product Review must
-approve isolated Telegram/iOS validation and any later production cutover.
+Gate 0 and Gate 1 are closed. `V3.1-alpha.1` is production validated with
+`photo + en-US`. Coverage and cadence remain on their legacy defaults and 4H
+Delta remains off. This closeout does not authorize source integration,
+Global 6:3:1, Global 4H cadence, Delta activation, or Gate 2. Gate 2 requires a
+new explicit Wilson instruction and its own release gates.

@@ -1,9 +1,9 @@
 # Fiona User-Visible Surface Matrix
 
 - Version: V3.1-alpha.1.1
-- Status: Gate 1.1 release candidate
+- Status: Production Validated; Gate 1 CLOSED
 - Owner: Fiona Engineering
-- Updated: 2026-09-02
+- Updated: 2026-09-03
 
 ## Production Surface Inventory
 

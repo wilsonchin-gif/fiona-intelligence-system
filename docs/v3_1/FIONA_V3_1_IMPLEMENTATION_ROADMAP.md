@@ -1,9 +1,9 @@
 # Fiona V3.1 Implementation Roadmap
 
 Version: V3.1-alpha.1
-Status: Gate 1 implemented; PASS WITH CONDITIONS; Gate 2 not started
+Status: Gate 1 CLOSED; Production Validated; Gate 2 not started
 Owner: Wilson / Codex
-Updated: 2026-08-25
+Updated: 2026-09-03
 
 ## 1. Delivery Model
 
@@ -152,11 +152,15 @@ fallback behavior, full tests, documentation, and exact release boundary. Stop.
 ### Current Result
 
 - Native `sendPhoto`, direct 1440 x 1800 render, media flag, centralized locale,
-  Market News `en-US`, fallback matrix, leakage guard, and validator are complete.
-- Automated Full/Missing/Stress and simulated iOS preview checks pass.
-- Conditions remaining: isolated real Telegram/iOS review, explicit activation
-  approval, and separately scoped migration of non-Market-News language surfaces.
-- Verdict: **PASS WITH CONDITIONS**.
+  fallback matrix, leakage guard, and validator are complete and production
+  validated.
+- Gate 1.1 completed the `en-US` boundary for Market News, Morning, Evening,
+  Daily, Weekly, Alert, missing-data states, and safe fallback text.
+- Real Market News, Morning, Evening, Alert, iPhone presentation, and CJK
+  leakage acceptance passed. Daily and Weekly passed production-safe validation.
+- Implementation commits: `d0ea66931bdedf0cacbf3df451379ddbd327ea67`
+  and `87d046884375fe0fc64fe8e35e009f04dad77c46`.
+- Verdict: **CLOSED - PRODUCTION VALIDATED**.
 - Gate 2: **NOT STARTED**.
 
 ## 4. Gate/Wave 2 - Global Coverage Engine
@@ -436,6 +440,7 @@ No documentation update is bundled opportunistically from an unrelated wave.
 
 ## 9. Roadmap Stop Condition
 
-This roadmap is approved planning material. Gate 0 closeout does not authorize
-Gate 1 implementation. Gate 1 has not started and requires a separate explicit
-Wilson instruction.
+Gate 1 is closed. This closeout does not authorize Gate 2 implementation.
+Gate 2 requires its own Previous Wave Retrospective, repository and product
+gates, bounded implementation scope, and explicit Wilson instruction. V3.1 GA,
+Global 6:3:1, Global 4H cadence, and 4H Delta remain inactive.

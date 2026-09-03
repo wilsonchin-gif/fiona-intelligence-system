@@ -1,9 +1,9 @@
 # Fiona Product Milestones
 
 - Version: V3.1-alpha.1
-- Status: Active
+- Status: Production Validated; Gate 1 CLOSED
 - Owner: Wilson / Fiona Product
-- Updated: 2026-08-05
+- Updated: 2026-09-03
 
 ## Milestone History
 
@@ -13,7 +13,7 @@
 | V2 | Shadow Release | 图文生成、验证、清理与降级链路完成生产验证。 |
 | V2.4 | Image Production | Telegram 正式使用高清图片文档交付市场情报。 |
 | V3.0 | Design System 1.0 | 建立统一产品语言、判断优先的信息层级、组件体系与品牌基础。 |
-| V3.1-alpha.1 | Native Photo + en-US | 建立可回滚的 Telegram 原生照片与 American English Market News 输出边界；等待生产激活评审。 |
+| V3.1-alpha.1 | Native Photo + en-US | Telegram 原生照片和全部活跃用户面 American English 完成生产验证；真实 iPhone QA 通过，Gate 1 关闭。 |
 
 ## Product Meaning
 

@@ -1,8 +1,8 @@
 # Fiona iOS Visual QA
 
 - Version: V3.1-alpha.1
-- Status: Automated and desktop review complete; real-device review pending
-- Updated: 2026-08-25
+- Status: Production and real-device acceptance PASS
+- Updated: 2026-09-03
 
 ## Test Artifacts
 
@@ -60,16 +60,23 @@ Missing data uses explicit English states and does not invent zeroes. Long text
 is semantically clipped; type does not shrink and component regions remain
 fixed.
 
-## Remaining Device Gate
+## Real-Device Acceptance
 
-No real iPhone Telegram client was used in this implementation run. Before
-activating `photo + en-US`, an isolated Telegram validation chat must confirm:
+Wilson completed real iPhone Telegram acceptance on 2026-09-03 after production
+activation of `photo + en-US`.
 
-- Telegram server processing does not produce unacceptable softness;
-- iPhone feed preview preserves judgment readability and safe edges;
-- opened-image zoom is crisp;
-- caption truncation and line breaks are acceptable;
-- one actual message ID is returned and no duplicate fallback is produced.
+| Check | Result |
+|---|---|
+| Native photo displayed inline | PASS |
+| Attachment filename absent | PASS |
+| Full card visible | PASS |
+| Body readable | PASS |
+| Fiona's View readable | PASS |
+| No material clipping | PASS |
+| English natural | PASS |
+| Caption appropriately short | PASS |
+| No visible duplicate | PASS |
 
-The Gate 1 verdict is therefore `PASS WITH CONDITIONS`, not an unconditional
-real-device acceptance.
+Gate 1 real-device acceptance is complete. Future presentation-layer changes
+must repeat real-device QA; this result is not a blanket approval for later
+layouts or delivery modes.

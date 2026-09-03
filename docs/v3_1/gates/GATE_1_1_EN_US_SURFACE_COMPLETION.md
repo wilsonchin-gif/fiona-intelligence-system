@@ -2,10 +2,11 @@
 
 - Internal version: V3.1-alpha.1.1
 - Gate: Gate 1.1
-- Status: Local implementation PASS; production observation pending
+- Status: Production Validated; merged into closed Gate 1
 - Owner: Wilson / Fiona Engineering
-- Updated: 2026-09-02
+- Updated: 2026-09-03
 - Production baseline: `d0ea66931bdedf0cacbf3df451379ddbd327ea67`
+- Implementation commit: `87d046884375fe0fc64fe8e35e009f04dad77c46`
 
 ## Objective
 
@@ -103,11 +104,9 @@ Railway variables are unchanged.
 1. Source wording may be withheld when it cannot be represented safely by the
    deterministic English projection; this is deliberate and preferable to a
    fabricated translation.
-2. Real Morning, Evening, and naturally occurring Alert messages require
-   production observation after deployment.
-3. Daily and Weekly are validated locally now and still require later natural
-   occurrence observation.
-4. Legacy non-production reports and historical files may remain Chinese; they
+2. Daily and Weekly passed deterministic production-safe validation; later
+   natural occurrences remain part of normal operational observation.
+3. Legacy non-production reports and historical files may remain Chinese; they
    are outside the active Telegram boundary.
 
 ## Rollback
@@ -118,7 +117,10 @@ operational isolation only. No scheduler or ledger rollback is required.
 
 ## Gate Verdict
 
-**Local verdict: PASS.**
+**Production verdict: PASS.**
 
-Production verdict remains **PASS WITH CONDITIONS** until runtime health and
-natural production output observations are recorded. Gate 2 remains locked.
+Real Morning, Evening, and naturally occurring Alert deliveries succeeded in
+`en-US`; production runtime remained healthy; Daily and Weekly production-safe
+validation passed; Wilson accepted real iPhone output and production CJK
+leakage. Gate 1.1 is complete and the parent Gate 1 is closed. Gate 2 remains
+locked and has not started.

@@ -1,15 +1,36 @@
 # Fiona Version Changelog
 
-版本：V3.1-alpha.1.1
-状态：Gate 1.1 local PASS; Production observation pending
+版本：V3.1-alpha.1
+状态：Production Validated; Gate 1 CLOSED
 负责人：Wilson  
-更新时间：2026-09-02
+更新时间：2026-09-03
+
+## V3.1-alpha.1 - Gate 1 Production Closeout
+
+日期：2026-09-03
+
+Commits：`d0ea66931bdedf0cacbf3df451379ddbd327ea67`、`87d046884375fe0fc64fe8e35e009f04dad77c46`
+
+影响范围：Documentation / Product Acceptance / Version Records
+
+### 验收完成
+
+- Native Telegram Photo、1440 x 1800 iOS Renderer 与 Market News `en-US` 通过生产验收。
+- Morning、Evening 与自然 Alert 的 `en-US` 真实生产消息通过；Daily 与 Weekly 通过 production-safe 验证。
+- Wilson 完成真实 iPhone 九项验收：内嵌图片、无附件名、完整可见、正文与 Fiona's View 可读、无裁切、英文自然、Caption 简短且无重复。
+- 生产 CJK leakage、Scheduler、ledger 与 runtime 健康检查通过。
+
+### 当前边界
+
+- 生产媒体为 `photo`，输出语言为 `en-US`。
+- Coverage 与 cadence 保持 `legacy`，4H Delta 保持 `off`。
+- Gate 1 正式关闭；Gate 2 尚未开始；V3.1 GA 未声明。
 
 ## V3.1-alpha.1.1 - American English Surface Completion
 
 日期：2026-09-02
 
-Commit：待 Gate 1.1 精确边界提交后由 Git 历史确认
+Commit：`87d046884375fe0fc64fe8e35e009f04dad77c46`
 
 影响范围：Output Locale Boundary / Morning / Evening / Daily / Weekly / Alert / Tests / Documentation
 
@@ -35,7 +56,7 @@ Commit：待 Gate 1.1 精确边界提交后由 Git 历史确认
 
 ### 影响范围
 
-- `FIONA_OUTPUT_LOCALE=en-US` 下的剩余生产用户面将随部署立即切换为英文。
+- `FIONA_OUTPUT_LOCALE=en-US` 下的剩余生产用户面已随部署切换为英文并完成 Gate 1 验收。
 - Scheduler、cadence、coverage、delta、Railway Variables 与 Telegram transport 语义不变。
 - Gate 2 未开始。
 
@@ -43,7 +64,7 @@ Commit：待 Gate 1.1 精确边界提交后由 Git 历史确认
 
 日期：2026-08-25
 
-Commit：待 Gate 1 精确边界提交后由 Git 历史确认
+Commit：`d0ea66931bdedf0cacbf3df451379ddbd327ea67`
 
 影响范围：Market News Transport / iOS Renderer / Locale Boundary / Tests / Documentation
 

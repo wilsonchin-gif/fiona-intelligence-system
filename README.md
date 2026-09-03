@@ -17,7 +17,10 @@ Fiona does not provide investment advice, price targets, or trading instructions
 - Production: Fiona V3.0.0 Design System 1.0 (`a8678b0`)
 - Railway delivery: Market News `image` mode
 - Fiona V3.1 Global 4H Intelligence: Gate 0 closed on 2026-08-25
-- Gate 1 alpha implementation: `PASS WITH CONDITIONS`; production activation pending
+- V3.1-alpha.1 Gate 1: `CLOSED` and production validated
+- Effective Telegram presentation: native `photo` + `en-US`
+- Coverage and cadence remain `legacy`; 4H Delta remains `off`
+- Gate 2 has not started
 
 ## Production Runtime
 
@@ -102,8 +105,8 @@ WILSON_INTERVAL_MINUTES=5
 FIONA_ALERT_ENABLED=0
 FIONA_ALERT_DRY_RUN=1
 FIONA_MARKET_NEWS_MODE=image
-FIONA_TELEGRAM_MEDIA_MODE=document
-FIONA_OUTPUT_LOCALE=zh-CN
+FIONA_TELEGRAM_MEDIA_MODE=photo
+FIONA_OUTPUT_LOCALE=en-US
 ```
 
 Send switch priority:
@@ -133,21 +136,23 @@ FIONA_MARKET_NEWS_MODE=image
 Invalid values are logged and safely treated as `text`. Future delivery changes
 must still pass text/shadow validation before a controlled production cutover.
 
-V3.1-alpha.1 adds two independent, legacy-safe Market News flags:
+V3.1-alpha.1 uses two independent, reversible Market News flags:
 
 ```env
-FIONA_TELEGRAM_MEDIA_MODE=document
-FIONA_OUTPUT_LOCALE=zh-CN
+FIONA_TELEGRAM_MEDIA_MODE=photo
+FIONA_OUTPUT_LOCALE=en-US
 ```
 
 - `document` preserves the V3.0 1080 x 1350 `sendDocument` path.
 - `photo` selects the native 1440 x 1800 `sendPhoto` path.
-- `zh-CN` preserves the current Market News language.
+- `zh-CN` preserves the legacy Market News language.
 - `en-US` selects the centralized American-English Market News output layer.
 
-Both new flags retain legacy defaults when absent or invalid. They are not a
-production activation instruction. A definite photo failure falls back to text
-once; an ambiguous Telegram outcome does not trigger a retry or fallback.
+Production has validated `photo + en-US`; the code still retains legacy-safe
+defaults when either flag is absent or invalid. A definite photo failure falls
+back to text once; an ambiguous Telegram outcome does not trigger a retry or
+fallback. Gate 1 is closed, while global coverage, global cadence, and 4H Delta
+remain inactive.
 
 Offline image delivery verification:
 
