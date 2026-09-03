@@ -24,6 +24,10 @@ from app.fiona_briefing import (
     build_weekly_brief,
 )
 from app.fiona_classifier import render_alert
+from app.fiona_coverage_runtime import (
+    run_global_coverage_shadow_safe,
+    validate_global_coverage_runtime,
+)
 from app.fiona_engine import FionaAlertEngine
 from app.fiona_lifecycle import LifecycleManager
 from app.fiona_market_news_delivery import (
@@ -78,6 +82,7 @@ from app.fiona_scheduler import (
     scheduler_interval_minutes as scheduler_interval_minutes_v2,
     write_uncertain_delivery_journal,
 )
+from app.fiona_source_registry import coverage_profile_from_env, load_source_registry, validate_registry
 from app.fiona_types import EventCategory, FionaEvent, MarketDirection, PushDecision
 from app.telegram_service import (
     send_document_with_caption as telegram_send_document,
@@ -88,6 +93,8 @@ from app.wilson import (
     DEFAULT_TIMEZONE,
     append_telegram_log,
     build_snapshot,
+    latest_news_candidates,
+    latest_news_source_failures,
     prepare_output_dirs,
     render_markdown as render_wilson_markdown,
     split_message,
@@ -163,6 +170,9 @@ def run_once(
     warning_logger = lambda item: append_runtime_log(log_path, item)
     output_locale = output_locale_from_env(warning_logger=warning_logger)
     status["output_locale"] = output_locale.value
+    coverage_profile = coverage_profile_from_env(warning_logger=warning_logger)
+    status["coverage_profile"] = coverage_profile.value
+    status["coverage_selection_authority"] = "legacy"
     localized_market_news_view_model: Any | None = None
     telegram_text_override: str | None = None
     try:
@@ -184,6 +194,14 @@ def run_once(
                     output_locale=output_locale,
                 )
                 telegram_text_override = compose_market_news_fallback_text(localized_market_news_view_model)
+            status["coverage_shadow"] = run_global_coverage_shadow_safe(
+                latest_news_candidates() if snapshot_builder is build_snapshot else [],
+                output_dir=output_dir,
+                evaluated_at=generated_at,
+                logger=warning_logger,
+                collect_expanded=snapshot_builder is build_snapshot,
+                legacy_failures=latest_news_source_failures() if snapshot_builder is build_snapshot else {},
+            )
         write_payload(
             latest_dir,
             archive_dir,
@@ -1330,6 +1348,14 @@ def parse_args() -> argparse.Namespace:
         "validate-en-us-surfaces",
         help="Validate every active en-US user surface without Telegram or scheduler state",
     )
+    subparsers.add_parser(
+        "validate-global-coverage",
+        help="Validate Gate 2 source, clustering, and shadow ranking without delivery or scheduler state",
+    )
+    subparsers.add_parser(
+        "validate-source-registry",
+        help="Validate the canonical source registry without network or production side effects",
+    )
     return parser.parse_args()
 
 
@@ -1351,6 +1377,14 @@ def first_runtime_env(*names: str) -> str:
 
 def main() -> None:
     args = parse_args()
+    if args.command == "validate-source-registry":
+        validation = validate_registry(load_source_registry())
+        print(json.dumps(validation, ensure_ascii=False, separators=(",", ":")), flush=True)
+        raise SystemExit(0 if validation["ok"] else 1)
+    if args.command == "validate-global-coverage":
+        validation = validate_global_coverage_runtime()
+        print(json.dumps(validation, ensure_ascii=False, separators=(",", ":")), flush=True)
+        raise SystemExit(0 if validation["ok"] else 1)
     if args.command == "validate-en-us-surfaces":
         from app.fiona_surface_validation import validate_en_us_user_surfaces_runtime
 

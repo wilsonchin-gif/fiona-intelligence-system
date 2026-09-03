@@ -1,7 +1,7 @@
 # Fiona Version Matrix
 
-版本：V3.1-alpha.1
-状态：Production Validated; Gate 1 CLOSED
+版本：V3.1-alpha.2
+状态：Implemented / Shadow Candidate; Gate 1 CLOSED; Gate 3 LOCKED
 负责人：Wilson / Codex
 更新时间：2026-09-03
 
@@ -17,7 +17,8 @@
 | V3.0.0 | Production | Judgment-first Visual Experience + Design System 1.0 | 已完成 | 已同步 | Production | Image mode |
 | V3.1-alpha.1 | Production Validated - Gate 1 CLOSED | Native Telegram Photo + all active `en-US` user surfaces | 已实现并上线 | 已同步 | Production | photo + en-US |
 | V3.1-alpha.1.1 | Completed sub-gate | Morning / Evening / Daily / Weekly / Alert `en-US` completion | 已完成 | 已同步 | 已验证 | 继承 photo + en-US |
-| V3.1.0 | Planning | Global 4H Intelligence complete product | Gate 2-4 未开始 | Gate 0/1 已记录 | 未进入 GA | 未进入 GA |
+| V3.1-alpha.2 | Implemented / Shadow Candidate | Source Registry / Provenance / Global Coverage Engine | 本地验证完成 | 已同步 | 待生产 Shadow 验证 | 用户内容仍由 legacy 决定 |
+| V3.1.0 | Planning | Global 4H Intelligence complete product | Gate 2 待观察；Gate 3 锁定 | Gate 0/1/2 已记录 | 未进入 GA | 未进入 GA |
 
 ## 2. 当前生产版本
 
@@ -30,7 +31,8 @@ V3.1-alpha.1 已完成并激活 Market News 原生 1440 x 1800 photo transport �
 Daily、Weekly 与 Alert。真实 Market News、Morning、Evening、Alert、iPhone
 展示和 CJK leakage 验收通过；Daily 与 Weekly 已完成 production-safe 验证。
 Gate 1 已关闭。来源覆盖与 cadence 仍为 `legacy`，4H Delta 仍为 `off`，
-Gate 2 尚未开始。
+Gate 2 已实现但全球选题未激活；必须先完成生产 Shadow 观察。单次本地
+验证不代表 6:3:1 长期达标，来源缺口仍然公开记录。Gate 3 未开始。
 
 ## 3. 相关文档
 
@@ -50,3 +52,6 @@ Gate 2 尚未开始。
 - User Surface Matrix：`docs/v3_1/FIONA_USER_VISIBLE_SURFACE_MATRIX.md`
 - Gate 1.1：`docs/v3_1/gates/GATE_1_1_EN_US_SURFACE_COMPLETION.md`
 - Gate 1 Closeout：`docs/v3_1/gates/GATE_1_CLOSEOUT.md`
+- Gate 2 Implementation：[报告](v3_1/gates/GATE_2_IMPLEMENTATION.md)
+- Source Registry：[来源清单](v3_1/FIONA_GLOBAL_SOURCE_REGISTRY.md)
+- Coverage Engine：[架构](v3_1/FIONA_GLOBAL_COVERAGE_ENGINE.md)

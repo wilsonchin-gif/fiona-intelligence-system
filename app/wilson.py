@@ -19,6 +19,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from app.fiona_source_registry import load_source_registry
 from app.telegram_service import send_document as telegram_service_send_document
 from app.telegram_service import send_message as telegram_service_send_message
 
@@ -201,17 +202,6 @@ CRYPTO_FALLBACK_SYMBOLS = [
     ("APTUSDT", "aptos", "apt", "Aptos"),
     ("ARBUSDT", "arbitrum", "arb", "Arbitrum"),
 ]
-
-RSS_SOURCES = [
-    ("Fed Press", "us", "https://www.federalreserve.gov/feeds/press_all.xml", 1.2),
-    ("Yahoo US", "us", "https://feeds.finance.yahoo.com/rss/2.0/headline?s=%5EGSPC,%5EIXIC,%5EDJI,SPY,QQQ&region=US&lang=en-US", 1.0),
-    ("CNBC Markets", "us", "https://www.cnbc.com/id/100003114/device/rss/rss.html", 1.0),
-    ("Yahoo China", "china", "https://feeds.finance.yahoo.com/rss/2.0/headline?s=000001.SS,399001.SZ,FXI,MCHI&region=US&lang=en-US", 0.9),
-    ("SCMP China Economy", "china", "https://www.scmp.com/rss/91/feed", 0.9),
-    ("Cointelegraph", "crypto", "https://cointelegraph.com/rss", 1.0),
-    ("Decrypt", "crypto", "https://decrypt.co/feed", 0.9),
-]
-
 
 @dataclass
 class Quote:
@@ -805,20 +795,43 @@ def fetch_fear_greed() -> dict[str, Any]:
 def fetch_news() -> tuple[dict[str, list[dict[str, Any]]], list[str]]:
     buckets = {"us": [], "china": [], "crypto": []}
     errors = []
-    for name, market, url, weight in RSS_SOURCES:
+    candidates: list[dict[str, Any]] = []
+    source_failures: dict[str, str] = {}
+    retrieved_at = datetime.now(timezone.utc)
+    for source in load_source_registry().legacy_sources():
         try:
-            for item in fetch_rss(url)[:20]:
-                item["source"] = name
-                item["weight"] = weight
-                item["market"] = market
+            for item in fetch_rss(source.endpoint)[:20]:
+                item["source"] = source.name
+                item["source_id"] = source.source_id
+                item["weight"] = source.weight
+                item["market"] = source.market_bucket
+                item["original_language"] = source.language
+                item["publisher_region"] = source.publisher_region.value
+                item["default_event_region"] = source.default_event_region.value
+                item["source_tier"] = int(source.tier)
+                item["independence_group"] = source.independence_group
+                item["retrieved_at"] = retrieved_at
                 item["text"] = f"{item.get('title', '')} {item.get('summary', '')}"
-                buckets[market].append(item)
+                buckets[source.market_bucket].append(item)
+                candidates.append(dict(item))
         except Exception as exc:  # noqa: BLE001
-            errors.append(f"{name}: {exc}")
+            errors.append(f"{source.name}: {exc}")
+            source_failures[source.source_id] = type(exc).__name__
     for market, items in buckets.items():
         items.sort(key=lambda item: (item.get("published_at") or datetime.now(timezone.utc)), reverse=True)
         buckets[market] = items[:30]
+    RUN_CACHE["news_candidates"] = candidates
+    RUN_CACHE["news_retrieved_at"] = retrieved_at
+    RUN_CACHE["news_source_failures"] = source_failures
     return buckets, errors
+
+
+def latest_news_candidates() -> list[dict[str, Any]]:
+    return [dict(item) for item in RUN_CACHE.get("news_candidates", []) if isinstance(item, dict)]
+
+
+def latest_news_source_failures() -> dict[str, str]:
+    return dict(RUN_CACHE.get("news_source_failures", {}))
 
 
 def fetch_rss(url: str) -> list[dict[str, Any]]:
@@ -831,7 +844,7 @@ def fetch_rss(url: str) -> list[dict[str, Any]]:
         published = first_text(entry, ["pubDate", "published", "updated", "{http://www.w3.org/2005/Atom}published", "{http://www.w3.org/2005/Atom}updated"])
         link = first_link(entry)
         if title:
-            items.append({"title": clean_text(title), "summary": clean_text(summary), "url": link, "published_at": parse_datetime(published)})
+            items.append({"title": clean_text(title), "summary": clean_text(summary), "url": link, "published_at": parse_datetime(published), "original_published_at": published})
     return items
 
 

@@ -1,9 +1,9 @@
 # Fiona Product Roadmap
 
-版本：V1.0.0  
+版本：V3.1-alpha.2
 状态：Active  
 负责人：Wilson  
-更新时间：2026-06-26
+更新时间：2026-09-03
 
 ## 产品定位
 
@@ -11,21 +11,26 @@ Fiona 是 AI Market Intelligence Product。她不是新闻机器人，而是 Mar
 
 ## 当前版本
 
-当前生产版本：V1.0.1 Workspace V2
+当前生产基线：V3.0.0 Design System + V3.1-alpha.1 Native Photo / en-US。
 
-完成度：85%
+当前工作里程碑：V3.1-alpha.2 Global Coverage Engine，Implemented / Shadow Candidate。
+
+完成度按 Gate 记录，不以未经度量的百分比替代验收：Gate 0/1 CLOSED；
+Gate 2 本地实现完成，生产观测待验收；Gate 3 LOCKED。
 
 已完成：
 
 - Railway 7×24 Runtime。
 - Telegram Group 推送。
 - Fiona Market News / Morning / Evening / Daily / Weekly。
-- Alert Engine 代码保留，生产默认关闭。
+- Alert Engine 代码与既有生产开关保留，本轮不调整。
 - Telegram 发送链路统一为 `telegram_service`。
 - Production 配置命名初步统一。
 - Documentation System 初始化。
 - Wilson AI Lab Workspace V2 初始化。
 - Fiona 本地仓库迁移到统一 Workspace。
+- 原生 1440 x 1800 Photo、统一 en-US 输出、真实 iPhone QA。
+- Gate 2 单一 Source Registry、官方来源扩展、provenance、聚类与 Shadow 排序。
 
 ## 当前优先级
 
@@ -48,7 +53,10 @@ P2：
 - 数据库持久化。
 - 多用户/多频道配置。
 
-## Roadmap
+## 历史规划
+
+下列早期版本规划作为历史保留，不代表当前生产状态；当前权威路线为
+[V3.1 Gate Roadmap](../v3_1/FIONA_V3_1_IMPLEMENTATION_ROADMAP.md)。
 
 ### V1.0.0 Production Foundation
 
@@ -82,16 +90,15 @@ P2：
 
 ## 下一阶段
 
-下一阶段：V1.1.0 Alert Readiness
+下一阶段：完成 Gate 2 生产 Shadow 观察与 Product Review。
 
 进入条件：
 
-- Production V1 连续稳定运行。
-- Telegram 文本质量达标。
-- Alert Dry Run 输出可审计。
+- Gate 1 已关闭，production 继续 photo/en-US。
+- Global Coverage 保持 legacy authority；不得修改 cadence 或 Delta。
 
 退出条件：
 
-- Alert Engine 可按环境变量安全开启。
-- S/A/B/C 事件分类稳定。
-- 去重、冷却、生命周期日志完整。
+- 至少 14 天 Shadow 与 100 个不同合格事件簇。
+- 官方来源健康、ROW 覆盖改善、地区缺口与转载误判有可审核证据。
+- Product 明确批准后才讨论 global_631 激活；Gate 3 不自动开始。

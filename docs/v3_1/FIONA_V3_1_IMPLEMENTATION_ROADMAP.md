@@ -1,7 +1,7 @@
 # Fiona V3.1 Implementation Roadmap
 
-Version: V3.1-alpha.1
-Status: Gate 1 CLOSED; Production Validated; Gate 2 not started
+Version: V3.1-alpha.2
+Status: Gate 2 Implemented / Shadow Candidate; Gate 3 LOCKED
 Owner: Wilson / Codex
 Updated: 2026-09-03
 
@@ -440,7 +440,12 @@ No documentation update is bundled opportunistically from an unrelated wave.
 
 ## 9. Roadmap Stop Condition
 
-Gate 1 is closed. This closeout does not authorize Gate 2 implementation.
-Gate 2 requires its own Previous Wave Retrospective, repository and product
-gates, bounded implementation scope, and explicit Wilson instruction. V3.1 GA,
-Global 6:3:1, Global 4H cadence, and 4H Delta remain inactive.
+Gate 1 is closed. Wilson authorized Gate 2 source/provenance/clustering/ranking
+implementation with legacy-safe Shadow observation. That implementation is
+complete locally; the production observation gate remains open. See
+[Gate 2 implementation](gates/GATE_2_IMPLEMENTATION.md).
+
+Global 6:3:1 selection needs at least 14 days and 100 distinct qualified
+clusters plus Product review before activation. No source-count or single-run
+ratio claim substitutes for that evidence. Gate 3 remains locked: no cadence,
+Delta, Volume, or brief-merger work is authorized by this wave.

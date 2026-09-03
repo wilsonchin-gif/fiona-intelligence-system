@@ -1,7 +1,7 @@
 # Fiona V3.1 Release Strategy
 
-Version: V3.1-alpha.1
-Status: Gate 1 CLOSED; Production Validated; Gate 2 not started
+Version: V3.1-alpha.2
+Status: Gate 2 Implemented / Shadow Candidate; Gate 3 LOCKED
 Owner: Wilson / Codex
 Updated: 2026-09-03
 
@@ -70,12 +70,15 @@ milestones:
 
 | Value | Behavior |
 |---|---|
-| `legacy` | current source/ranking behavior |
-| `global_631` | source-aware global allocation |
+| `legacy` | current source/ranking authority plus Gate 2 Shadow evaluation |
+| `global_631` | reserved activation profile; alpha.2 still enforces legacy authority |
 
 - Default: `legacy`.
 - New behavior first runs in Shadow with candidate/selection comparison.
-- Invalid registry or ranking state: fall back to `legacy` and mark degraded.
+- Invalid profile: warning + `legacy`. Ranking failures cannot affect legacy delivery.
+- The registry is release-validated; it is the sole production source list.
+- Alpha.2 never publishes Shadow selections, even if `global_631` is supplied.
+- No additional observability flag, scheduler, Telegram sender, or ledger is added.
 
 ### 3.4 `FIONA_CADENCE_MODE`
 
@@ -217,11 +220,16 @@ No opportunistic refactor or new product feature is permitted.
 
 ### Global Coverage
 
-- Run legacy and global ranking on the same candidate set.
+- Reuse the exact legacy candidates and add official Shadow-only candidates.
 - Publish legacy only.
 - Record 24-hour/seven-day regional share, tier share, diversity, duplicates,
   confirmation, overrides, and reviewer judgments.
-- Minimum recommendation: 14 days and 100 candidate clusters.
+- Activation gate: at least 14 days and 100 distinct qualified event clusters.
+- The count unions overlapping event membership across observations, so repeat
+  evaluations and new confirmations do not inflate progress.
+- Without a Railway Volume, local Shadow JSON is ephemeral. A redeploy may reset
+  observation progress; exported production metrics are needed to establish a
+  continuous review window. Gate 2 does not introduce persistence infrastructure.
 
 ### 4H Delta
 
@@ -361,7 +369,8 @@ V3.1.0 may be marked Production only after:
 ## 12. Current Authorization
 
 Gate 0 and Gate 1 are closed. `V3.1-alpha.1` is production validated with
-`photo + en-US`. Coverage and cadence remain on their legacy defaults and 4H
-Delta remains off. This closeout does not authorize source integration,
-Global 6:3:1, Global 4H cadence, Delta activation, or Gate 2. Gate 2 requires a
-new explicit Wilson instruction and its own release gates.
+`photo + en-US`. Wilson authorized Gate 2 implementation and its normal release
+behind legacy selection. Coverage and cadence must remain `legacy`; Delta stays
+off. Gate 2 global selection activation, Gate 3, new Volumes, and schedule changes
+are not authorized. Production verification and observation remain distinct from
+the local implementation verdict.

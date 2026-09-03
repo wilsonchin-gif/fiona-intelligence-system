@@ -20,7 +20,8 @@ Fiona does not provide investment advice, price targets, or trading instructions
 - V3.1-alpha.1 Gate 1: `CLOSED` and production validated
 - Effective Telegram presentation: native `photo` + `en-US`
 - Coverage and cadence remain `legacy`; 4H Delta remains `off`
-- Gate 2 has not started
+- V3.1-alpha.2 Gate 2: Implemented / Shadow Candidate; global selection is not activated
+- Gate 3 remains locked
 
 ## Production Runtime
 
@@ -107,6 +108,7 @@ FIONA_ALERT_DRY_RUN=1
 FIONA_MARKET_NEWS_MODE=image
 FIONA_TELEGRAM_MEDIA_MODE=photo
 FIONA_OUTPUT_LOCALE=en-US
+FIONA_COVERAGE_PROFILE=legacy
 ```
 
 Send switch priority:
@@ -161,6 +163,34 @@ python3 scripts/dry_run_fiona_market_news_phase2c.py
 ```
 
 The dry-run uses a fake Telegram transport and makes no network request.
+
+## Global Coverage Shadow
+
+Gate 2 adds a canonical source registry in `config/sources.json`, provenance,
+deterministic event clustering, and dynamic 6:3:1 editorial ranking. The exact
+seven legacy feeds remain authoritative for every user-visible brief.
+Only Market News evaluates the expanded source set in an isolated Shadow
+path. It adds no Telegram send, scheduled occurrence, or ledger write.
+
+Keep `FIONA_COVERAGE_PROFILE=legacy`. Both legal values (`legacy`, `global_631`)
+are parsed, but this alpha release never promotes Shadow selections into
+production content. Invalid values warn and fall back to legacy. No additional
+coverage flag is introduced. Cadence remains legacy and Delta remains off.
+
+```bash
+python3 -m app.fiona_runtime validate-source-registry
+python3 -m app.fiona_runtime validate-global-coverage
+```
+
+These validators do not send Telegram or mutate scheduler state. The second
+command reads public source endpoints. Runtime observations emit
+`fionaGlobalCoverageShadow` with source health and 24h/7d metrics, without
+article bodies or credentials. Observation JSON is ephemeral on Railway
+without a Volume; Gate 2 does not create one. Activation needs reviewed
+evidence covering 14 days and at least 100 distinct qualified event clusters.
+
+See [Gate 2 implementation](docs/v3_1/gates/GATE_2_IMPLEMENTATION.md) and
+[source inventory](docs/v3_1/FIONA_GLOBAL_SOURCE_REGISTRY.md).
 
 ## Alert Engine
 

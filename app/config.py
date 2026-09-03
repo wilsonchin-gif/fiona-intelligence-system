@@ -39,16 +39,22 @@ def load_sources(path: Path) -> list[Source]:
     data = json.loads(path.read_text(encoding="utf-8"))
     sources: list[Source] = []
     for raw in data.get("sources", []):
+        if "legacy_enabled" in raw and not raw.get("legacy_enabled", False):
+            continue
+        market = raw.get("market") or {
+            "us": "us_equities",
+            "china": "china_equities",
+            "crypto": "crypto",
+        }.get(raw.get("market_bucket"), "")
         sources.append(
             Source(
                 name=raw["name"],
-                market=raw["market"],
-                url=raw["url"],
-                kind=raw.get("kind", "rss"),
+                market=market,
+                url=raw.get("endpoint") or raw.get("url", ""),
+                kind=raw.get("retrieval_method") or raw.get("kind", "rss"),
                 enabled=raw.get("enabled", True),
                 weight=float(raw.get("weight", 1.0)),
                 language=raw.get("language", "mixed"),
             )
         )
     return sources
-

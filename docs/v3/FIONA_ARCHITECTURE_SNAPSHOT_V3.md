@@ -1,7 +1,7 @@
 # Fiona Architecture Snapshot - Visual V3 / Design System 1.0
 
-- Version: V3.0.0 Production base + V3.1-alpha.1 Gate 1
-- Status: Native photo + all active en-US surfaces production validated; Gate 1 CLOSED
+- Version: V3.0.0 Production base + V3.1-alpha.2 Shadow Candidate
+- Status: Gate 1 CLOSED; Gate 2 implemented; global selection inactive
 - Owner: Fiona Engineering
 - Updated: 2026-09-03
 
@@ -46,7 +46,29 @@ arbitration. It does not introduce another scheduler, ledger, or sender.
 The effective production settings are `photo + en-US`. Coverage and cadence
 remain on their `legacy` defaults, and 4H Delta remains `off`.
 
-## Change Boundary
+## V3.1 Gate 2 Source and Coverage Boundary
+
+```mermaid
+flowchart LR
+    Registry[config/sources.json] --> Legacy[Same seven legacy sources]
+    Registry --> Expanded[Official Shadow-only sources]
+    Legacy --> Snapshot[Existing snapshot and briefs]
+    Snapshot --> Delivery[Unchanged en-US/photo delivery]
+    Legacy --> Provenance[Original evidence and event metadata]
+    Expanded --> Provenance
+    Provenance --> Clusters[Dedup and independent confirmation]
+    Clusters --> Rank[Quality / materiality / dynamic 6:3:1]
+    Rank --> Metrics[Shadow metrics and ephemeral 24h/7d history]
+```
+
+Only Market News evaluates Shadow. Its result is not an input to the public
+brief, renderer, caption, or Telegram sender. The synchronous evaluator uses
+bounded feed sizes, timeouts, and a safe failure boundary. It writes no
+scheduler ledger or occurrence. The history is not durable on Railway without
+a Volume; no Volume is added in this gate. Existing five task times, photo
+transport, language boundary, Alerts, and Delta remain unchanged.
+
+## V3 Visual Change Boundary
 
 V3 与 Design System 1.0 只替换 Renderer 内部的视觉表现和工程组织：布局、字体层级、色彩、间距、密度、品牌签名、tokens 与组件。Scheduler、Runtime、ViewModel contract、Caption Composer、Telegram Service、Railway command、ledger 与 arbitration 均未改变。
 

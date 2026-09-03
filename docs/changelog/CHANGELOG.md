@@ -1,9 +1,27 @@
 # Fiona Version Changelog
 
-版本：V3.1-alpha.1
-状态：Production Validated; Gate 1 CLOSED
+版本：V3.1-alpha.2
+状态：Implemented / Shadow Candidate; Global selection not activated
 负责人：Wilson  
 更新时间：2026-09-03
+
+## V3.1-alpha.2 - Global Coverage Engine
+
+日期：2026-09-03
+
+Commit：本条目随 `Implement Fiona V3.1 global coverage engine` 提交；SHA 由 Git 记录。
+
+影响范围：Source Registry / Provenance / Shadow Ranking / Coverage Metrics / Tests / Documentation
+
+- 新增单一来源注册表、8 个 Shadow-only 官方来源适配器、事件地区与来源地区分离、独立来源计数。
+- 新增确定性聚类、URL/转载去重、时效与质量门槛、重大事件覆盖和动态 6:3:1 排序。
+- 修复硬编码来源列表与配置漂移；保留原 7 个 legacy 来源的顺序、权重和输出责任。
+- 新增仅观测的 24h/7d 指标与无 Telegram、ledger、occurrence 副作用的验证入口。
+- 原始标题、语言、链接和发布时间保留；无时间戳不伪造为当前时间；缺少文章链接不伪造为共享源链接。
+- 不修改 Scheduler、Telegram transport、Alert、cadence、Delta、Railway Variables。
+- `FIONA_COVERAGE_PROFILE=legacy` 保持选题权威；不声明 Global Coverage 已激活。
+- 来源缺口和本地 ECB TLS 验证问题保留为显式风险；不绕过访问限制。
+- 下一步：生产 Shadow 14 天、至少 100 个不同的合格事件簇；Gate 3 继续锁定。
 
 ## V3.1-alpha.1 - Gate 1 Production Closeout
 
