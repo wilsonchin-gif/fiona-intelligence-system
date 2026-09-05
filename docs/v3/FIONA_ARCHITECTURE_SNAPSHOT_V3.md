@@ -3,7 +3,16 @@
 - Version: V3.0.0 Production base + V3.1-alpha.2 Shadow Candidate
 - Status: Gate 1 CLOSED; Gate 2 implemented; global selection inactive
 - Owner: Fiona Engineering
-- Updated: 2026-09-03
+- Updated: 2026-09-05
+
+## Gate 2.1 Observability Projection
+
+Existing ranking -> `fiona_shadow_audit.selected_event_audits` -> existing bounded
+Shadow history / run status -> occurrence result serialization -> compact
+`fionaShadowSelectedEvent` Railway log. Occurrence correlation uses the actual
+result ID, never a guessed schedule. No source, ranking, transport, scheduler,
+ledger or infrastructure changes. Original observation start remains September 4.
+See [contract and release evidence](../v3_1/gates/GATE_2_1_SHADOW_EDITORIAL_OBSERVABILITY.md).
 
 ## Production Pipeline
 

@@ -3,7 +3,17 @@
 版本：V3.1-alpha.2
 状态：Implemented / Shadow Candidate; Global selection not activated
 负责人：Wilson  
-更新时间：2026-09-03
+更新时间：2026-09-05
+
+## Gate 2.1 - Shadow Editorial Observability
+
+日期：2026-09-05；Commit：`Add Fiona Shadow editorial observability`（SHA 见 Git）。
+
+- 新增入选事件的限量审计投影和 compact JSON 日志，保留实际 occurrence ID、排名、标题、来源与独立性、已有评分及覆盖理由。
+- 扩展既有 Shadow 历史和安全验证输出；不新增存储系统，不调整排序、选源、Telegram、Scheduler、Ledger 或开关。
+- 修复汇总日志无法支持逐条编辑审阅的问题；不回填历史标题，不重置 2026-09-04 观察起点。
+- HKMA 保持 WATCH；独立确认数问题仅观测。Gate 2 保持 PASS WITH CONDITIONS，Gate 3 LOCKED。
+- 固定排序和指标基线等价；22 项专项、381 项全量测试及编译通过。首轮生产明细待自然任务验收。
 
 ## V3.1-alpha.2 - Global Coverage Engine
 

@@ -83,6 +83,7 @@ from app.fiona_scheduler import (
     write_uncertain_delivery_journal,
 )
 from app.fiona_source_registry import coverage_profile_from_env, load_source_registry, validate_registry
+from app.fiona_shadow_audit import emit_occurrence_audits
 from app.fiona_types import EventCategory, FionaEvent, MarketDirection, PushDecision
 from app.telegram_service import (
     send_document_with_caption as telegram_send_document,
@@ -573,6 +574,7 @@ def occurrence_result(
     }
     if run_status is not None:
         result["run_status"] = run_status
+        emit_occurrence_audits(run_status, occurrence.occurrence_id)
     return result
 
 

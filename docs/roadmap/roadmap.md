@@ -3,7 +3,7 @@
 版本：V3.1-alpha.2
 状态：Active  
 负责人：Wilson  
-更新时间：2026-09-03
+更新时间：2026-09-05
 
 ## 产品定位
 
@@ -16,7 +16,8 @@ Fiona 是 AI Market Intelligence Product。她不是新闻机器人，而是 Mar
 当前工作里程碑：V3.1-alpha.2 Global Coverage Engine，Implemented / Shadow Candidate。
 
 完成度按 Gate 记录，不以未经度量的百分比替代验收：Gate 0/1 CLOSED；
-Gate 2 本地实现完成，生产观测待验收；Gate 3 LOCKED。
+Gate 2 已进入生产 Shadow 观测（起点 2026-09-04，159 个累计合格聚类）；
+Gate 2.1 补齐编辑明细日志，等待首轮生产明细验收；14 天条件仍待满足，Gate 3 LOCKED。
 
 已完成：
 

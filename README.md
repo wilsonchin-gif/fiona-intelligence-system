@@ -23,6 +23,11 @@ Fiona does not provide investment advice, price targets, or trading instructions
 - V3.1-alpha.2 Gate 2: Implemented / Shadow Candidate; global selection is not activated
 - Gate 3 remains locked
 
+Gate 2 production Shadow observation began September 4, 2026; legacy selection
+remains authoritative. [Gate 2.1 editorial observability](docs/v3_1/gates/GATE_2_1_SHADOW_EDITORIAL_OBSERVABILITY.md)
+adds selected-headline/provenance/score audit logs without changing ranking or
+delivery. The original 14-day observation clock continues.
+
 ## Production Runtime
 
 Railway starts Fiona with:

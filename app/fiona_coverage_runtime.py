@@ -24,6 +24,7 @@ from app.fiona_source_registry import (
     load_source_registry,
     validate_registry,
 )
+from app.fiona_shadow_audit import selected_event_audits
 
 
 COVERAGE_STATE_NAME = "fiona_coverage_shadow_history.json"
@@ -50,7 +51,7 @@ class CoverageObservationStore:
             store.load_error = type(exc).__name__
         return store
 
-    def record(self, evaluation: CoverageEvaluation) -> None:
+    def record(self, evaluation: CoverageEvaluation, audit: dict[str, Any] | None = None) -> None:
         now = evaluation.evaluated_at.astimezone(timezone.utc)
         cutoff = now - timedelta(days=COVERAGE_RETENTION_DAYS)
         retained = [
@@ -61,6 +62,7 @@ class CoverageObservationStore:
         retained.append(
             {
                 "evaluated_at": now.isoformat(),
+                **(audit or {}),
                 "metrics": evaluation.metrics,
                 "source_health": [health.to_dict() for health in evaluation.source_health],
                 "qualified_cluster_members": [
@@ -248,7 +250,8 @@ def run_global_coverage_shadow(
         source_health=health,
     )
     store = CoverageObservationStore.load(output_dir / COVERAGE_STATE_NAME)
-    store.record(evaluation)
+    audit = selected_event_audits(evaluation)
+    store.record(evaluation, audit)
     store.save()
     result = {
         "ok": True,
@@ -257,6 +260,7 @@ def run_global_coverage_shadow(
         "shadow_profile": "global_631_shadow",
         "selection_authority": "legacy",
         "user_visible_content_changed": False,
+        **audit,
         **evaluation.metrics,
         "source_health": [item.to_dict() for item in health],
         "rolling_24h": store.rolling_summary(evaluated_at, 24),
@@ -318,6 +322,7 @@ def validate_global_coverage_runtime(
     result = {
         "ok": bool(registry_result["ok"] and events),
         "mode": "coverage_validation",
+        **selected_event_audits(evaluation),
         "coverage_profile": "global_631_shadow",
         "candidate_events": metrics["candidate_events"],
         "qualified_clusters": metrics["qualified_clusters"],

@@ -4,7 +4,19 @@
 - Status: Implemented / Shadow Candidate
 - Verdict: PASS WITH CONDITIONS
 - Owner: Wilson / Fiona Engineering
-- Updated: 2026-09-03
+- Updated: 2026-09-05
+
+## Gate 2.1 Observability Addendum
+
+Production Shadow ran successfully on September 4 and 5 with legacy-selected
+photo/en-US output. Cumulative distinct qualified clusters: 159. Official
+observation start: 2026-09-04 00:02:09.964920 UTC+8; 14 days remain mandatory.
+The aggregate-only history could not support selected-story editorial review.
+[Gate 2.1](GATE_2_1_SHADOW_EDITORIAL_OBSERVABILITY.md) adds bounded selected-event
+audit records, existing score/provenance visibility and compact occurrence-bound
+logs. Ranking and aggregate metrics are unchanged. HKMA remains WATCH after one
+success and one timeout. Single-source confirmation remains an observation,
+not a clustering fix. Parent Gate 2 remains PASS WITH CONDITIONS; Gate 3 LOCKED.
 
 ## Objective
 
