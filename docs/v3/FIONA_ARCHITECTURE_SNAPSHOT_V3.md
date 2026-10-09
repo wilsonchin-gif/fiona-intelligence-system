@@ -7,6 +7,24 @@
 
 ## Gate 2.2 Coverage Authority
 
+### Gate 2.3 single-instance state boundary
+
+```mermaid
+flowchart LR
+    Volume[Railway Volume /data] --> Guard[RuntimeStatePaths + initialized manifest]
+    Guard --> Scheduler[Existing Scheduler + Arbitration]
+    Scheduler --> Ledger[Durable scheduler ledger / uncertain journal]
+    Guard --> Memory[Durable runtime / standalone Alert memory]
+    Guard --> Shadow[Existing Shadow history]
+    Memory --> Runtime[Existing Runtime]
+    Runtime --> Telegram[Existing photo / en-US delivery]
+```
+
+Missing or corrupt authority blocks delivery, not blank startup catch-up.
+Atomic versioned stores, explicit migration boundary; single instance only,
+not distributed exactly-once. No cadence/Delta/Alert-threshold change, no Gate 3.
+See [Gate 2.3](../v3_1/gates/GATE_2_3_PRODUCTION_STATE_CONTINUITY.md).
+
 ```mermaid
 flowchart LR
     Snapshot --> Coverage[One Global Coverage Evaluation]

@@ -22,6 +22,10 @@
 
 ## 2. 当前生产版本
 
+2026-10-09 部署后本地补充（未提交）：生产修复提交 e6cdb7a 成功运行，仍 legacy/photo/en-US。
+激活验收 HOLD / FAIL：真实候选中的 rates 语境小修复留在本地；重启 ephemeral ledger 已造成同一 Evening occurrence 重发。
+暂停后续部署，等待 Product Review；不把部署成功等同于 Gate 2 通过。
+
 当前生产生成基线为 V3.0.0 Design System，并叠加已验证的
 V3.1-alpha.1 Gate 1 能力。Railway 继续使用 Market News `image` 模式，
 Telegram 媒体为原生 `photo`，输出语言为 `en-US`。
@@ -56,3 +60,9 @@ Gate 2 已实现但全球选题未激活；35 天观察及数量门槛已通过�
 - Source Registry：[来源清单](v3_1/FIONA_GLOBAL_SOURCE_REGISTRY.md)
 - Coverage Engine：[架构](v3_1/FIONA_GLOBAL_COVERAGE_ENGINE.md)
 - Gate 2.2：[编辑质量与选择入口](v3_1/gates/GATE_2_2_EDITORIAL_QUALITY_REMEDIATION.md)
+
+## Gate 2.3 — 2026-10-09
+
+State-continuity remediation candidate; local validation PASS, live acceptance
+pending. Production remains photo/en-US/image with legacy coverage/cadence and
+Delta off. No Gate 3 and no distributed exactly-once claim.

@@ -628,14 +628,23 @@ def materiality_for(
     ))
     if administrative and not contains_material_override(title_text):
         return 18, 20, 20, False, ""
-    rate_action = bool(re.search(
-        r"\b(rate decision|policy rate|bank rate|interest rate|rates)\b.*"
+    monetary_context = any(has_term(title_text, term) for term in (
+        "policy rate", "policy rates", "bank rate", "interest rate", "interest rates",
+        "benchmark rate", "monetary policy", "rate decision", "federal reserve", "fed",
+        "ecb", "boj", "pboc", "bank of england", "reserve bank"
+    ))
+    rate_action = monetary_context and bool(re.search(
+        r"\b(rate decision|policy rates?|bank rate|interest rates?|rates)\b.*"
         r"\b(decision|cut|cuts|hike|hikes|raise|raises|lower|lowers|maintained|unchanged|hold|holds)\b"
-        r"|\b(rate decision|emergency rate cut|emergency rate hike)\b", searchable
+        r"|\b(rate decision|emergency rate cut|emergency rate hike)\b"
+        r"|\b(cuts?|hikes?|raises?|lowers?|holds?|maintains?)\b.{0,40}\brates?\b", title_text
     ))
     macro_data = any(has_term(searchable, term) for term in (
         "inflation", "consumer price", "gross domestic product", "gdp", "payroll", "unemployment"
     ))
+    financial_rate_signal = any(has_term(title_text, term) for term in (
+        "bond yields", "treasury yields", "rate expectations", "mortgage rates"
+    )) and bool(re.search(r"\b(surge|surges|jump|jumps|rise|rises|fall|falls|drop|drops|repricing|higher|lower)\b", title_text))
     market_action = any(has_term(searchable, term) for term in (
         "tariff", "tariffs", "sanction", "sanctions", "enforcement action", "enforcement actions", "new regulation", "fiscal stimulus",
         "capital requirement", "liquidity injection", "policy decision", "policy statement"
@@ -649,7 +658,7 @@ def materiality_for(
         score = 75
     elif macro_data:
         score = 70
-    elif market_action:
+    elif market_action or financial_rate_signal:
         score = 65
     elif any(has_term(searchable, term) for term in ("war", "bomb blast", "explosion", "invasion")):
         score = 58

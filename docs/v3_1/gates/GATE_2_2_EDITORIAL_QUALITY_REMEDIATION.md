@@ -147,3 +147,48 @@ UNKNOWN 增加是取消虚假来源回退及缺摘要的结果，不强填配额
 Verdict：PASS WITH CONDITIONS，适合以 legacy 配置部署修复，不足以关闭 Gate 2 或直接激活 global_631。
 四个工程目标完成；回放限制、HKMA、多源证据和真实修复后编辑复验仍为条件。
 下一步是 Product Review + 合法 Market News 的修复后 Shadow 观察；不开始 Gate 3。
+
+## 部署后补充验收 — HOLD / FAIL Activation Readiness
+
+本节为部署后追加的本地审计记录，**未进入已推送提交**。不得误读前面的提交前结论为最终激活通过。
+
+已正常推送提交：e6cdb7a135266149c6281b93725de820fe5b7744。
+Railway 自动 deployment：7dcc76ac-19b2-445a-8056-33945208e69a，SUCCESS，单 RUNNING instance。
+变量原样：photo / en-US / image；coverage、cadence、delta 未设置，默认 legacy / legacy / off。
+首次 cycle ok=true、ledger_load_error=null、errors=[]。
+
+只读容器验证（不保存 Shadow history、不创建 occurrence、不调用 Telegram）返回：
+504 candidates、126 qualified、10 selected；地域 20% US/EU、40% China、30% ROW、10% GLOBAL；15 source identities / 14 independence groups。
+15 个来源本轮全部成功，包括 HKMA；不能覆盖其 21/34 长窗口超时风险。
+validator 的 Telegram calls / ledger mutations / formal occurrences 均为 0，验证前后 ledger hash 相同。
+
+### 新确认阻断项
+
+1. 实际候选中 hotel room rates 被通用 rates / lower 规则抬为政策利率，materiality 83。这是语境错误，不是官方决议。
+   已在本地加 monetary headline context 和动词/利率关系约束，补充酒店房价及 Fed cuts rates 的 regression tests。
+   此小修复尚未 commit / push / deploy，不能声称生产已修复。
+2. 自动部署重启暴露既有 ephemeral ledger 的防重漏洞：旧实例已在 20:34 完成同一 Evening occurrence（message_id=2655），新实例在 21:20 因丢失容器内账本又补跑同一 scheduled_at=20:30 occurrence（message_id=2658），并发送两个既有 Alert（2656、2657）。
+   不是 Shadow 发送，也不是新的 Coverage bridge 调用；新实例根本未执行 Market News，但确实发生真实重复 Evening 发送。
+   必须如实报告，不能写“额外 Telegram=0”来掩盖部署副作用。验证命令本身仍是 0 次发送。
+3. 新轮候选仍有非市场题材/前瞻或评论内容，单轮也非 6:3:1 长期证明；不能因修复了几个标题就宣布编辑质量验收通过。
+
+不回滚、不改 Scheduler / persistence / Alert / Railway Variables；不继续自动推送本地补丁，避免再次重启造成重复消息。
+最终 activation readiness verdict：**FAIL / HOLD**。当前 legacy 服务运行健康，不自动激活 global_631。
+需要 Wilson / Product Review：确认本地语义修复，并单独授权解决重启账本连续性或安全发布窗口；不在本阶段越权修改架构。
+Gate 2 OPEN；Gate 3 LOCKED；无 Closeout。
+
+### 最终本地复验与提交边界
+
+- 本地语义补丁后：全部 442 项单元测试通过，Gate 2.2 专项 61 项通过；Python compile check 和 diff whitespace check 通过。
+- 待审阅的本地修改仅涉及 `app/fiona_global_coverage.py`、`tests/test_fiona_gate2_2.py`、本报告、CHANGELOG、Version Matrix 和 Implementation Roadmap，未暂存、未追加提交。
+- 已有 `docs/decisions/decision_log.md` 修改及其余未跟踪文档/脚本保持原样，不纳入本次提交。
+- 初次已推送提交与后续未发布补丁必须分开验收；本地测试通过不消除已观察到的生产重复发送风险。
+
+## Gate 2.3 reviewed consolidation
+
+Hotel/room/hospitality rate context is now separated from monetary rates, bond
+yields, rate expectations and materially moving mortgage rates, with regression
+tests. Gate 2.2 follow-ups were individually reviewed, not blindly staged.
+State continuity is handled by [Gate 2.3](GATE_2_3_PRODUCTION_STATE_CONTINUITY.md).
+The previous HOLD incident remains valid historical evidence; global_631 stays
+inactive and broader editorial/source evidence is not declared complete.

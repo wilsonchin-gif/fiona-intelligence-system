@@ -13,6 +13,7 @@ from app.fiona_engine import FionaAlertEngine
 from app.fiona_lifecycle import LifecycleManager
 from app.fiona_locale import OutputLocale, output_locale_from_env, parse_output_locale
 from app.fiona_memory import FionaMemory
+from app.fiona_state import RuntimeStatePaths
 from app.fiona_types import EventCategory, FionaEvent, MarketDirection, PushDecision
 from app.telegram_service import send_message as telegram_send_message
 from app.wilson import append_telegram_log, telegram_message_id
@@ -66,8 +67,10 @@ def process_alert_events(
     enabled: bool | None = None,
     output_locale: OutputLocale | str | None = None,
 ) -> list[AlertRunItem]:
+    state_paths = RuntimeStatePaths.from_environment(output_dir)
+    state_paths.require_initialized()
     output_dir.mkdir(parents=True, exist_ok=True)
-    memory_path = output_dir / ALERT_MEMORY_NAME
+    memory_path = state_paths.standalone_alert_memory
     log_path = output_dir / ALERT_LOG_NAME
     memory = FionaMemory.load(memory_path)
     engine = FionaAlertEngine(LifecycleManager(memory.event_memory))
@@ -85,6 +88,9 @@ def process_alert_events(
         reason = decision_reason(event, enabled=active, dry_run=dry)
         item = AlertRunItem(event=event, message=message, sent=False, reason=reason)
         if should_send:
+            # Persist the existing lifecycle decision before an external side effect.
+            memory.event_memory = engine.lifecycle_manager.records
+            memory.save(memory_path)
             try:
                 response = send_func(message)
                 item.telegram_message_id = telegram_message_id(response)

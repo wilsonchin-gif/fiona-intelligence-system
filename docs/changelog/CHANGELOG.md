@@ -7,6 +7,10 @@
 
 ## Gate 2.2 — Editorial Quality Remediation
 
+部署后本地追加（尚未提交/推送）：e6cdb7a 自动部署健康、生产仍 legacy；只读真实候选发现 hotel rates 语义误判，已补 monetary headline context 测试。
+确认重启因 ephemeral ledger 重复发送 Evening：2655→2658，原有 Alert 另发送 2656/2657；Scheduler 与 persistence 未修改，停止后续部署。
+激活就绪结论改为 HOLD / FAIL；需单独授权解决账本连续性与安全发布，不能写 extra Telegram=0。详见 Gate 2.2 报告部署后补充。
+
 日期：2026-10-09；提交标题：`Remediate Fiona global coverage editorial quality`（SHA 由 Git 记录）。
 
 - 修复媒体默认地域造成的事件误分；明确地理、机构辖区、市场、实体、GLOBAL/UNKNOWN 顺序。
@@ -306,3 +310,14 @@ Commit：待本次 Documentation Sync 提交后由 Git 历史确认
 - Fiona 定时任务稳定运行。
 - Alert Engine 代码保留，默认关闭。
 - 配置兼容完成：`WILSON_SEND`、`TELEGRAM_GROUP_ID`、`WILSON_INTERVAL_MINUTES`。
+
+# 2026-10-09 — Gate 2.3 Production State Continuity (release preparation)
+
+- Added dedicated Volume-backed state resolver, explicit initialization/migration
+  contract and fail-safe missing/corrupt production state policy.
+- Hardened scheduler/memory atomic writes and reloadable uncertain-delivery journal;
+  persisted standalone Alert lifecycle intent before delivery, unchanged thresholds.
+- Consolidated reviewed rate-context regression fix; no global_631 activation.
+- Tests: 480 total / 36 persistence / 63 Gate 2.2, compile PASS at preparation.
+- Incident: duplicate Evening 2655/2658; Alert restart continuity assessed separately.
+- Commit/deployment/live acceptance pending; Gate 2 OPEN, Gate 3 LOCKED.

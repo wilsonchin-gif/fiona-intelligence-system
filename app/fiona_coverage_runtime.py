@@ -74,15 +74,13 @@ class CoverageObservationStore:
         self.records = retained
 
     def save(self) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
+        from app.fiona_state import atomic_write_json
         payload = {
             "schema_version": COVERAGE_STATE_SCHEMA_VERSION,
-            "persistence": "ephemeral_on_railway_without_volume",
+            "persistence": "volume_backed_if_mounted_otherwise_local",
             "records": self.records,
         }
-        temporary = self.path.with_suffix(self.path.suffix + ".tmp")
-        temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-        temporary.replace(self.path)
+        atomic_write_json(self.path, payload)
 
     def rolling_summary(self, now: datetime, hours: int) -> dict[str, Any]:
         cutoff = now.astimezone(timezone.utc) - timedelta(hours=hours)
@@ -250,7 +248,9 @@ def run_global_coverage_shadow(
         evaluated_at=evaluated_at,
         source_health=health,
     )
-    store = CoverageObservationStore.load(output_dir / COVERAGE_STATE_NAME)
+    from app.fiona_state import RuntimeStatePaths
+    state_paths = RuntimeStatePaths.from_environment(output_dir)
+    store = CoverageObservationStore.load(state_paths.coverage_history)
     audit = {"editorial_rules_version": "gate2.2", **selected_event_audits(evaluation)}
     store.record(evaluation, audit)
     store.save()
@@ -270,7 +270,7 @@ def run_global_coverage_shadow(
         "cumulative_qualified_clusters": store.cumulative_qualified_clusters,
         "observation_target_days": 14,
         "observation_target_qualified_clusters": 100,
-        "state_persistence": "ephemeral_on_railway_without_volume",
+        "state_persistence": "volume_backed" if state_paths.root else "ephemeral_on_railway_without_volume",
         "telegram_api_calls": 0,
         "scheduler_ledger_mutations": 0,
         "formal_occurrences_created": 0,

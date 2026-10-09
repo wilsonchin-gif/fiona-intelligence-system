@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from app.fiona_narrative import NarrativeEngine
+from app.fiona_state import StateContinuityError, atomic_write_json
 from app.fiona_types import AlertLevel, EventMemoryRecord, FionaEvent, LifecycleStatus, MarketDirection, NarrativeRecord, NarrativeStatus
 
 
@@ -52,20 +53,32 @@ class FionaMemory:
 
     def to_dict(self) -> dict[str, Any]:
         return {
+            "schema_version": "1.0",
             "event_memory": {key: value.to_dict() for key, value in self.event_memory.items()},
             "narrative_memory": {key: value.to_dict() for key, value in self.narrative_memory.items()},
             "decision_memory": [record.to_dict() for record in self.decision_memory],
         }
 
     def save(self, path: Path) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(self.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
+        try:
+            atomic_write_json(path, self.to_dict())
+        except OSError as exc:
+            raise StateContinuityError("memory_state_write_failed; delivery paused") from exc
 
     @classmethod
     def load(cls, path: Path) -> FionaMemory:
         if not path.exists():
             return cls()
         payload = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict) or payload.get("schema_version", "1.0") != "1.0":
+            raise ValueError("unsupported memory schema")
+        if not isinstance(payload.get("event_memory"), dict) or not isinstance(payload.get("narrative_memory"), dict) or not isinstance(payload.get("decision_memory"), list):
+            raise ValueError("invalid memory state")
+        if any(not isinstance(value, dict) for value in payload["event_memory"].values()):
+            raise ValueError("invalid event memory records")
+        for value in payload["event_memory"].values():
+            if not all(key in value for key in ("event_family_id", "first_seen_at", "last_seen_at", "last_level", "lifecycle_status")):
+                raise ValueError("incomplete event memory record")
         event_memory = {
             key: event_memory_from_dict(value)
             for key, value in dict(payload.get("event_memory", {})).items()

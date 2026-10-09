@@ -7,6 +7,9 @@ Updated: 2026-10-09
 
 ## Current Priority — Gate 2.2
 
+部署后补充（本地未提交）：激活就绪 HOLD / FAIL。e6cdb7a 的 legacy 部署成功，但真实验证发现 rates 语境漏洞和重启账本丢失引发的 Evening 重发。
+语义小修复已在本地准备；停止继续推送/部署，等待 Wilson 单独确认安全发布与账本连续性处理。Gate 3 仍锁定。
+
 Correct event-region evidence, separate authority/materiality, bound regional
 weight and logs, and implement the inactive selection bridge. Thresholds for
 elapsed observation and cluster volume passed; editorial Product Review is still
@@ -460,3 +463,12 @@ Global 6:3:1 selection needs at least 14 days and 100 distinct qualified
 clusters plus Product review before activation. No source-count or single-run
 ratio claim substitutes for that evidence. Gate 3 remains locked: no cadence,
 Delta, Volume, or brief-merger work is authorized by this wave.
+
+## Gate 2.3 Production Safety
+
+- Local completed: durable state contracts, explicit migration, fail-safe guards,
+  atomic writes, restart simulation, reviewed financial-rate semantic regression.
+- Pending: controlled Volume cutover / live restart verification.
+- Gate 2 remains OPEN; global_631 inactive; Gate 3 LOCKED.
+The separate Gate 2.3 authorization permits a dedicated runtime-state Volume
+only; it does not authorize Gate 3 Delta storage or cadence work.

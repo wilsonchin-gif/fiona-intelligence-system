@@ -69,6 +69,23 @@ class EditorialMaterialityTests(unittest.TestCase):
     def test_rate_decision_high(self):
         self.assertGreaterEqual(self.score("Bank rate maintained at 3.75 percent")[0], 75)
 
+    def test_hotel_room_rates_are_not_monetary_policy(self):
+        score = materiality_for("China hotel room rates disappoint during golden week", "Hotel operators lower room rates amid a tourism boom.", source(), "macro_policy", ("equities", "fx"))[0]
+        self.assertLess(score, 60)
+
+    def test_fed_cuts_rates_is_actual_policy_action(self):
+        self.assertGreaterEqual(self.score("Fed cuts rates by a quarter point")[0], 75)
+
+    def test_financial_rate_context_not_lost(self):
+        for title in ("Interest rates maintained unchanged", "Policy rates hold steady", "Treasury yields surge as rate expectations shift", "Mortgage rates jump to a two-decade high"):
+            with self.subTest(title=title):
+                self.assertGreaterEqual(self.score(title)[0], 65)
+
+    def test_hospitality_price_variants_do_not_become_policy_rates(self):
+        for title in ("Hotels cut room rates as occupancy falls", "Hospitality pricing drops amid tourism boom", "China hotel rates lower despite holiday travel"):
+            with self.subTest(title=title):
+                self.assertLess(self.score(title)[0], 60)
+
     def test_inflation_surprise_high(self):
         self.assertGreaterEqual(self.score("US inflation surprise raises liquidity risks")[0], 80)
 

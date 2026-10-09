@@ -9,6 +9,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from app.fiona_briefing import BRIEF_SCHEDULES, FionaBriefKind
+from app.fiona_state import atomic_write_json
 
 
 DEFAULT_POLLING_INTERVAL_MINUTES = 5
@@ -116,9 +117,13 @@ class SchedulerLedger:
             return cls(path=path)
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(payload, dict) or payload.get("schema_version") != LEDGER_SCHEMA_VERSION:
+                raise ValueError("unsupported scheduler ledger schema")
             last_check = parse_optional_datetime(payload.get("last_check_at"))
             raw_entries = payload.get("entries", {})
-            entries = raw_entries if isinstance(raw_entries, dict) else {}
+            if not isinstance(raw_entries, dict) or any(not isinstance(entry, dict) for entry in raw_entries.values()):
+                raise ValueError("invalid scheduler ledger entries")
+            entries = raw_entries
             return cls(path=path, last_check_at=last_check, entries=entries)
         except Exception as exc:  # noqa: BLE001 - malformed runtime state must not kill Fiona.
             return cls(path=path, load_error=str(exc))
@@ -131,10 +136,7 @@ class SchedulerLedger:
         }
 
     def save(self) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        tmp_path = self.path.with_suffix(self.path.suffix + ".tmp")
-        tmp_path.write_text(json.dumps(self.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
-        os.replace(tmp_path, self.path)
+        atomic_write_json(self.path, self.to_dict())
 
     def update_last_check(self, checked_at: datetime) -> None:
         self.last_check_at = ensure_aware(checked_at)
@@ -533,6 +535,20 @@ def write_uncertain_delivery_journal(path: Path, payload: dict[str, Any]) -> Non
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+
+
+def load_uncertain_delivery_journal(path: Path) -> None:
+    if not path.exists():
+        return
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        payload = json.loads(line)
+        if not isinstance(payload.get("occurrence_id"), str) or not payload["occurrence_id"]:
+            raise ValueError("invalid uncertain delivery journal")
+        remember_uncertain_occurrence(payload["occurrence_id"])
 
 
 def remember_uncertain_occurrence(occurrence_id: str) -> None:

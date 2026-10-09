@@ -304,3 +304,14 @@ Ignored runtime and secret files include:
 - `*.log`
 
 Disclaimer: 本内容仅供参考，不构成任何投资建议。投资有风险，入市需谨慎。
+
+# Gate 2.3 Production State Continuity
+
+Railway production requires a dedicated Volume mounted at `/data`; state defaults
+to `/data/fiona` via `RAILWAY_VOLUME_MOUNT_PATH`. Missing/uninitialized/corrupt
+state pauses delivery instead of replaying old editions. Migrate real scheduler
+and Alert state explicitly before enabling the mounted runtime. No database or
+additional scheduler is introduced. See
+[deployment instructions](docs/deployment/railway.md) and
+[Gate 2.3](docs/v3_1/gates/GATE_2_3_PRODUCTION_STATE_CONTINUITY.md).
+Coverage remains legacy; Gate 2 OPEN, Gate 3 LOCKED.

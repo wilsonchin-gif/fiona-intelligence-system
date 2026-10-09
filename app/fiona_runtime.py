@@ -60,6 +60,7 @@ from app.fiona_locale import (
     parse_output_locale,
 )
 from app.fiona_memory import DecisionMemoryRecord, FionaMemory
+from app.fiona_state import RuntimeStatePaths, StateContinuityError
 from app.fiona_narrative import NarrativeEngine
 from app.fiona_scheduler import (
     ACTION_DEFER,
@@ -80,6 +81,7 @@ from app.fiona_scheduler import (
     due_occurrences,
     occurrence_expired,
     remember_uncertain_occurrence,
+    load_uncertain_delivery_journal,
     scheduler_interval_minutes as scheduler_interval_minutes_v2,
     write_uncertain_delivery_journal,
 )
@@ -147,8 +149,15 @@ def run_once(
     fallback_to_wilson: bool = True,
 ) -> dict[str, Any]:
     generated_at = now_in_timezone(timezone_name)
+    try:
+        state_paths = RuntimeStatePaths.from_environment(output_dir)
+        state_paths.require_initialized()
+        load_uncertain_delivery_journal(state_paths.uncertain_journal)
+    except (StateContinuityError, ValueError) as exc:
+        return {"ok": False, "errors": [str(exc)], "state_continuity": "blocked", "send": send,
+                "brief": str(brief), "scheduled_briefs": [], "alerts": {"count": 0, "pushed": []}}
     latest_dir, archive_dir = prepare_output_dirs(output_dir, generated_at)
-    memory_path = output_dir / MEMORY_NAME
+    memory_path = state_paths.memory
     log_path = output_dir / TELEGRAM_LOG_NAME
     status: dict[str, Any] = {
         "ok": True,
@@ -243,7 +252,7 @@ def run_once(
         status["ok"] = False
         status["errors"].append(str(exc))
         append_runtime_log(log_path, {"event": "fionaRuntimeError", "ok": False, "error": str(exc)})
-        if fallback_to_wilson and (snapshot is not None or output_locale == OutputLocale.EN_US):
+        if not isinstance(exc, StateContinuityError) and fallback_to_wilson and (snapshot is not None or output_locale == OutputLocale.EN_US):
             fallback_text = (
                 compose_safe_en_us_brief_fallback(brief, generated_at)
                 if output_locale == OutputLocale.EN_US
@@ -401,8 +410,20 @@ def run_scheduler_cycle(
     runner: Callable[..., dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     current = now or now_in_timezone(timezone_name)
-    ledger_path = output_dir / SCHEDULER_LEDGER_NAME
+    try:
+        state_paths = RuntimeStatePaths.from_environment(output_dir)
+        state_paths.require_initialized()
+        load_uncertain_delivery_journal(state_paths.uncertain_journal)
+    except (StateContinuityError, ValueError) as exc:
+        return {"ok": False, "scheduler_now": current.isoformat(), "timezone": timezone_name,
+                "send": send, "interval_minutes": scheduler_interval_minutes(interval_minutes),
+                "state_continuity": "blocked", "ledger_load_error": str(exc),
+                "due_occurrences": [], "arbitration": [], "occurrence_results": [], "errors": [str(exc)]}
+    ledger_path = state_paths.ledger
     ledger = SchedulerLedger.load(ledger_path)
+    if ledger.load_error:
+        return {"ok": False, "ledger_load_error": ledger.load_error, "state_continuity": "blocked",
+                "due_occurrences": [], "occurrence_results": [], "errors": ["corrupt_ledger; replay suppressed"]}
     occurrences = due_occurrences(current, ledger.last_check_at, timezone_name)
     occurrences.extend(ledger.deferred_occurrences(current))
     eligible_occurrences: list[ScheduledOccurrence] = []
@@ -438,6 +459,7 @@ def run_scheduler_cycle(
         "interval_minutes": scheduler_interval_minutes(interval_minutes),
         "ledger_path": str(ledger_path),
         "ledger_load_error": ledger.load_error,
+        "state_continuity": "persistent_loaded" if state_paths.root else "local_legacy",
         "due_occurrences": [occurrence.occurrence_id for occurrence in occurrences],
         "arbitration": [
             {
@@ -555,7 +577,7 @@ def execute_scheduled_occurrence(
                 "message_ids": (run_status.get("brief_push") or {}).get("message_ids") if isinstance(run_status.get("brief_push"), dict) else [],
             }
             try:
-                write_uncertain_delivery_journal(output_dir / UNCERTAIN_DELIVERY_LOG_NAME, journal_payload)
+                write_uncertain_delivery_journal(RuntimeStatePaths.from_environment(output_dir).uncertain_journal, journal_payload)
             except Exception as journal_exc:  # noqa: BLE001 - last-resort visibility for local runs.
                 print(f"fiona uncertain delivery journal failed: {journal_exc}", flush=True)
             try:
