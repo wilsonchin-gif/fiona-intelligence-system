@@ -1,10 +1,21 @@
 # Fiona V3.1 Gate 2 Implementation
 
 - Internal version: V3.1-alpha.2
-- Status: Implemented / Shadow Candidate
+- Status: OPEN / PASS WITH CONDITIONS; Gate 2.2 remediation
 - Verdict: PASS WITH CONDITIONS
 - Owner: Wilson / Fiona Engineering
-- Updated: 2026-09-05
+- Updated: 2026-10-09
+
+## Gate 2.2 Current State
+
+The 35-day observation and 100-distinct-cluster thresholds passed, but editorial
+activation did not. Administrative inflation, publisher-region fallback, missing
+selection authority bridge and log throttling are remediated in
+[Gate 2.2](GATE_2_2_EDITORIAL_QUALITY_REMEDIATION.md). The real bridge is implemented
+but production remains **legacy**. Gate 2 is OPEN; Gate 3 LOCKED. Old wave sections
+below describe the original implementation, not proof of activation readiness.
+HKMA is now UNHEALTHY / ISOLATED (21/34 success); independent confirmation needs
+new production evidence. No GATE_2_CLOSEOUT.md is created.
 
 ## Gate 2.1 Observability Addendum
 

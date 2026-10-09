@@ -25,7 +25,9 @@ from app.fiona_source_registry import EventRegion, SourceSpec, SourceTier
 USER_AGENT = "Mozilla/5.0 FionaIntelligence/3.1 (+public-feed-validator)"
 DEFAULT_TIMEOUT_SECONDS = 12
 MAX_FEED_BYTES = 4 * 1024 * 1024
-QUALITY_FLOOR = 40
+QUALITY_FLOOR = 50
+MATERIALITY_FLOOR = 40
+REGIONAL_ADJUSTMENT_SCALE = 8
 DEFAULT_SELECTION_LIMIT = 10
 REGIONAL_TARGETS: dict[EventRegion, float] = {
     EventRegion.US_EU: 0.60,
@@ -65,6 +67,7 @@ class SourceProvenance:
     event_region: EventRegion
     source_tier: SourceTier
     independence_group: str
+    source_type: str = "Unknown"
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -80,6 +83,7 @@ class SourceProvenance:
             "event_region": self.event_region.value,
             "source_tier": int(self.source_tier),
             "independence_group": self.independence_group,
+            "source_type": self.source_type,
         }
 
 
@@ -364,9 +368,9 @@ REGION_KEYWORDS: tuple[tuple[EventRegion, tuple[str, ...]], ...] = (
             "taipei",
             "twse",
             "中国",
-            "央行",
             "香港",
             "台湾",
+            "alibaba", "tencent", "byd", "tsmc", "hang seng", "csrc",
         ),
     ),
     (
@@ -390,6 +394,10 @@ REGION_KEYWORDS: tuple[tuple[EventRegion, tuple[str, ...]], ...] = (
             "brazil",
             "banco central",
             "japan ministry of finance",
+            "ukraine", "ukrainian", "russia", "russian", "kyiv", "moscow",
+            "israel", "iran", "gaza", "middle east", "south africa",
+            "philippines", "korea", "canada", "indonesia", "thailand", "malaysia",
+            "日本", "印度", "韩国", "澳大利亚", "俄罗斯", "乌克兰",
         ),
     ),
     (
@@ -417,23 +425,74 @@ REGION_KEYWORDS: tuple[tuple[EventRegion, tuple[str, ...]], ...] = (
             "united kingdom",
             "britain",
             "london",
+            "germany", "france", "italy", "spain", "brussels", "european",
+            "us sec", "u s sec", "us10y", "dxy", "dow jones",
+            "fed", "ny fed", "america", "american", "americans", "us congress",
+            "us stocks", "dow", "nvidia", "apple", "walmart", "microsoft",
+            "tesla", "amazon", "meta", "alphabet", "s&p",
+            "美国", "欧洲", "英国", "德国", "法国",
         ),
     ),
 )
 
 
+INSTITUTION_JURISDICTIONS = (
+    (EventRegion.US_EU, ("federal reserve", "fed", "fomc", "sec", "securities and exchange commission", "ecb", "european central bank", "bank of england", "cftc", "us treasury")),
+    (EventRegion.GREATER_CHINA, ("pboc", "people's bank of china", "hkma", "hong kong monetary authority", "hkex", "csrc", "中国人民银行")),
+    (EventRegion.REST_OF_WORLD, ("boj", "bank of japan", "rbi", "reserve bank of india", "bank of korea", "rba", "reserve bank of australia", "monetary authority of singapore")),
+)
+MARKET_JURISDICTIONS = (
+    (EventRegion.US_EU, ("s&p", "nasdaq", "dow jones", "dow", "us10y", "dxy", "wall street")),
+    (EventRegion.GREATER_CHINA, ("hang seng", "twse", "csi500")),
+)
+ENTITY_JURISDICTIONS = (
+    (EventRegion.US_EU, ("nvidia", "apple", "walmart", "microsoft", "tesla", "amazon", "meta", "alphabet")),
+    (EventRegion.GREATER_CHINA, ("alibaba", "tencent", "byd", "tsmc")),
+)
+
+
 def infer_event_region(title: str, summary: str, source: SourceSpec) -> EventRegion:
-    for text in (title, summary):
-        searchable = normalized_text(text)
-        regions = {
-            region for region, keywords in REGION_KEYWORDS
-            if any(has_term(searchable, keyword) for keyword in keywords)
-        }
-        if len(regions) == 1:
-            return next(iter(regions))
-        if len(regions) > 1:
-            return EventRegion.GLOBAL
-    return source.default_event_region
+    non_locations = {normalized_text(term) for table in (
+        INSTITUTION_JURISDICTIONS, MARKET_JURISDICTIONS, ENTITY_JURISDICTIONS
+    ) for _, terms in table for term in terms}
+    location_keywords = tuple((region, tuple(term for term in terms if normalized_text(term) not in non_locations))
+                              for region, terms in REGION_KEYWORDS)
+    # An explicit location outranks institutions, markets and entities. Conflicts stay global.
+    for table in (location_keywords, INSTITUTION_JURISDICTIONS):
+        for text in (title, summary):
+            searchable = normalized_text(text)
+            regions = {region for region, keywords in table if any(has_term(searchable, keyword) for keyword in keywords)}
+            if len(regions) == 1:
+                return next(iter(regions))
+            if len(regions) > 1:
+                return EventRegion.GLOBAL
+    official_jurisdictions = {
+        "fed": EventRegion.US_EU, "sec": EventRegion.US_EU,
+        "ecb": EventRegion.US_EU, "boe": EventRegion.US_EU,
+        "hkma": EventRegion.GREATER_CHINA, "hkex": EventRegion.GREATER_CHINA,
+        "pboc": EventRegion.GREATER_CHINA,
+        "boj": EventRegion.REST_OF_WORLD, "rbi": EventRegion.REST_OF_WORLD,
+        "bok": EventRegion.REST_OF_WORLD,
+        "fed_press": EventRegion.US_EU, "sec_press": EventRegion.US_EU,
+        "ecb_press": EventRegion.US_EU, "boe_news": EventRegion.US_EU,
+        "hkma_press": EventRegion.GREATER_CHINA, "hkex_news": EventRegion.GREATER_CHINA,
+        "boj_whatsnew": EventRegion.REST_OF_WORLD, "rbi_press": EventRegion.REST_OF_WORLD,
+        "bok_press": EventRegion.REST_OF_WORLD, "rba_media": EventRegion.REST_OF_WORLD,
+    }
+    if source.source_type in {"Primary", "Official"} and source.source_id in official_jurisdictions:
+        return official_jurisdictions[source.source_id]
+    for table in (MARKET_JURISDICTIONS, ENTITY_JURISDICTIONS):
+        for text in (title, summary):
+            searchable = normalized_text(text)
+            regions = {region for region, terms in table if any(has_term(searchable, term) for term in terms)}
+            if len(regions) == 1:
+                return next(iter(regions))
+            if len(regions) > 1:
+                return EventRegion.GLOBAL
+    if any(has_term(normalized_text(text), term) for text in (title, summary)
+           for term in ("global", "worldwide", "cross regional")):
+        return EventRegion.GLOBAL
+    return EventRegion.UNKNOWN
 
 
 CATEGORY_KEYWORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
@@ -539,6 +598,9 @@ MATERIAL_OVERRIDE_KEYWORDS = (
     "capital controls",
     "declares war",
     "war breaks out",
+    "systemic financial crisis", "systemic banking crisis",
+    "emergency rate cut", "emergency rate hike", "unexpected rate cut",
+    "unexpected rate hike", "major regulatory ban", "global energy supply disruption",
 )
 
 
@@ -554,38 +616,48 @@ def materiality_for(
     markets: Sequence[str],
 ) -> tuple[int, int, int, bool, str]:
     searchable = normalized_text(f"{title} {summary}")
-    tier_points = {SourceTier.TIER_1: 24, SourceTier.TIER_2: 17, SourceTier.TIER_3: 12}.get(
-        source.tier,
-        5,
-    )
-    score = tier_points
     exceptional_event = contains_material_override(searchable)
+    title_text = normalized_text(title)
+    administrative = bool(re.search(
+        r"\b(calendar|committee dates|meeting dates|appointment|appointments|personnel|"
+        r"scam alert|fraud awareness|educational|housekeeping|procedural|"
+        r"coupon interest|weekly statistical|turnover data|diversity at|"
+        r"student loan|auction calendar|interest payment|tender results|"
+        r"underwriting auction|reminds public|stay alert|phishing scams|"
+        r"regular review|extension of period)\b", title_text
+    ))
+    if administrative and not contains_material_override(title_text):
+        return 18, 20, 20, False, ""
+    rate_action = bool(re.search(
+        r"\b(rate decision|policy rate|bank rate|interest rate|rates)\b.*"
+        r"\b(decision|cut|cuts|hike|hikes|raise|raises|lower|lowers|maintained|unchanged|hold|holds)\b"
+        r"|\b(rate decision|emergency rate cut|emergency rate hike)\b", searchable
+    ))
+    macro_data = any(has_term(searchable, term) for term in (
+        "inflation", "consumer price", "gross domestic product", "gdp", "payroll", "unemployment"
+    ))
+    market_action = any(has_term(searchable, term) for term in (
+        "tariff", "tariffs", "sanction", "sanctions", "enforcement action", "enforcement actions", "new regulation", "fiscal stimulus",
+        "capital requirement", "liquidity injection", "policy decision", "policy statement"
+    ))
+    surprise = any(has_term(searchable, term) for term in ("unexpected", "surprise", "emergency"))
     if exceptional_event:
-        score += 50
-    elif any(
-        term in searchable
-        for term in (
-            "rate decision",
-            "interest rate",
-            "monetary policy",
-            "inflation",
-            "consumer price",
-            "gross domestic product",
-            "payroll",
-            "unemployment",
-            "sanction",
-            "tariff",
-            "enforcement action",
-            "new regulation",
-            "policy statement",
-        )
-    ):
-        score += 31
-    elif category in {"macro_policy", "regulation"}:
-        score += 23
-    elif category in {"rwa", "crypto", "market"}:
-        score += 15
-    if any(term in searchable for term in ("unexpected", "surprise", "emergency", "record", "largest")):
+        score = 92
+    elif administrative:
+        return 18, 20, 20, False, ""
+    elif rate_action:
+        score = 75
+    elif macro_data:
+        score = 70
+    elif market_action:
+        score = 65
+    elif any(has_term(searchable, term) for term in ("war", "bomb blast", "explosion", "invasion")):
+        score = 58
+    elif category in {"rwa", "crypto", "market", "macro_policy", "regulation"}:
+        score = 40
+    else:
+        score = 25
+    if surprise and not exceptional_event:
         score += 10
     market_count = len(set(markets))
     cross_market = min(100, 20 + max(0, market_count - 1) * 24)
@@ -594,7 +666,7 @@ def materiality_for(
     score += round(cross_market * 0.12)
     narrative_relevance = 65 if category in {"macro_policy", "regulation", "rwa"} else 48
     materiality = max(0, min(100, score))
-    material_override = materiality >= 85 or exceptional_event
+    material_override = exceptional_event or (surprise and materiality >= 85)
     override_reason = "systemic_or_exceptional_material_event" if material_override else ""
     return materiality, cross_market, narrative_relevance, material_override, override_reason
 
@@ -648,6 +720,7 @@ def normalize_source_item(
         event_region=event_region,
         source_tier=source.tier,
         independence_group=source.independence_group,
+        source_type=source.source_type,
     )
     return NormalizedCoverageEvent(
         event_id=stable_event_id(source.source_id, source_url, title, published_at),
@@ -1051,7 +1124,9 @@ def rank_coverage_clusters(
     qualified = [
         cluster
         for cluster in clusters
-        if not cluster.stale and cluster.quality_score >= quality_floor
+        if (not cluster.stale and cluster.materiality >= MATERIALITY_FLOOR
+            and cluster.quality_score >= quality_floor
+            and cluster.freshness_score > 0 and cluster.normalized_headline.strip())
     ]
     qualified.sort(key=lambda item: (-base_ranking_score(item), item.cluster_id))
     selected: list[EventCluster] = []
@@ -1073,7 +1148,7 @@ def rank_coverage_clusters(
             regional_bonus = 0.0
             if target is not None:
                 current_share = selected_counts[cluster.event_region] / denominator
-                regional_bonus = max(-0.15, min(0.60, target - current_share)) * 40
+                regional_bonus = max(-0.15, min(0.60, target - current_share)) * REGIONAL_ADJUSTMENT_SCALE
             score = base_ranking_score(cluster) + regional_bonus
             return score, cluster.quality_score, cluster.cluster_id
 

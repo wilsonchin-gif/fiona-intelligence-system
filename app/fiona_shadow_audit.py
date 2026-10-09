@@ -11,6 +11,7 @@ from app.fiona_global_coverage import CoverageEvaluation, REGIONAL_TARGETS, base
 
 MAX_AUDIT_RECORDS = 50
 MAX_IDENTITIES = 24
+MAX_LOG_SELECTED_RECORDS = 10
 
 
 def safe_audit_text(value: str, limit: int = 240) -> str:
@@ -55,6 +56,13 @@ def selected_event_audits(evaluation: CoverageEvaluation) -> dict[str, Any]:
             "source_ids": [safe_audit_text(value, 64) for value in sources[:MAX_IDENTITIES]],
             "source_count": cluster.source_count,
             "independent_source_count": cluster.independent_source_count,
+            "confirmation_sufficiency": (
+                "multi_independent_confirmation" if cluster.independent_source_count >= 2
+                else "authoritative_primary_source" if any(
+                    event.source_provenance.source_type in {"Primary", "Official"}
+                    for event in cluster.events
+                ) else "single_secondary_source"
+            ),
             "independence_groups": [safe_audit_text(value, 64) for value in groups[:MAX_IDENTITIES]],
             "source_tier": int(cluster.source_tier),
             "source_tiers": sorted({int(event.source_tier) for event in cluster.events}),
@@ -96,9 +104,42 @@ def emit_occurrence_audits(run_status: dict[str, Any], occurrence_id: str,
     """Bind the authoritative occurrence only when its existing result is serialized."""
     try:
         shadow = run_status.get("coverage_shadow") or {}
-        for record in shadow.get("selected_event_audits", [])[:MAX_AUDIT_RECORDS]:
+        if shadow.get("evaluation_id"):
+            metrics = {key: value for key, value in shadow.items() if key not in {
+                "selected_event_audits", "source_health", "rolling_24h", "rolling_7d"
+            }}
+            emit(json.dumps({"event": "fionaGlobalCoverageShadow", "occurrence_id": occurrence_id,
+                             "log_selected_records_omitted": max(0, len(shadow.get("selected_event_audits", []))-MAX_LOG_SELECTED_RECORDS),
+                             **metrics, **{key: run_status[key] for key in (
+                                 "configured_coverage_profile", "selection_authority",
+                                 "coverage_fallback_used", "coverage_fallback_reason",
+                                 "selected_cluster_count") if key in run_status}},
+                            ensure_ascii=False, separators=(",", ":")), flush=True)
+            health = [{key: item.get(key) for key in (
+                "source_id", "status", "item_count", "normalized_count", "duration_ms", "error_category"
+            )} for item in shadow.get("source_health", [])[:MAX_AUDIT_RECORDS]]
+            for item in health:
+                for key in ("source_id", "error_category"):
+                    item[key] = safe_audit_text(item[key] or "", 80)
+            emit(json.dumps({"event": "fionaShadowSourceHealth", "occurrence_id": occurrence_id,
+                             "sources": health}, separators=(",", ":")), flush=True)
+        for record in shadow.get("selected_event_audits", [])[:MAX_LOG_SELECTED_RECORDS]:
             payload = {**record, "occurrence_id": occurrence_id, "event": "fionaShadowSelectedEvent"}
             emit(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), flush=True)
     except Exception:
         # Logging failure must not alter a completed delivery or ledger result.
         return
+
+
+def scheduler_log_projection(value: Any) -> Any:
+    """Only stdout is projected; archives, returned status and ledger are unchanged."""
+    if isinstance(value, list):
+        return [scheduler_log_projection(item) for item in value]
+    if not isinstance(value, dict):
+        return value
+    return {
+        key: ({name: item.get(name) for name in ("ok", "evaluation_id", "error_category")}
+              if key == "coverage_shadow" and isinstance(item, dict)
+              else scheduler_log_projection(item))
+        for key, item in value.items()
+    }

@@ -1,9 +1,9 @@
 # Fiona Global Coverage Engine 6:3:1
 
 - Version: V3.1-alpha.2
-- Status: Implemented / Shadow Candidate
+- Status: Gate 2.2 remediation; production legacy; Gate 2 OPEN
 - Owner: Fiona Engineering
-- Updated: 2026-09-03
+- Updated: 2026-10-09
 
 ## 1. Product Rule
 
@@ -23,7 +23,10 @@ flowchart LR
     Cluster --> Materiality[Materiality + Quality Floor]
     Materiality --> Rank[Dynamic 6:3:1 Ranking]
     Rank --> Shadow[Shadow Selection + Metrics]
-    Legacy[Legacy Selection] --> Telegram[Existing Telegram Content]
+    Shadow --> Authority[Central Coverage Authority]
+    Legacy[Legacy Selection] --> Authority
+    Authority -->|production legacy unchanged| Telegram[Existing Telegram Content]
+    Authority -. global_631 implemented but inactive .-> Presentation[Existing Market News Pipeline]
     Shadow -. no content mutation .-> Observability[24H / 7D Observability]
 ```
 
@@ -35,8 +38,14 @@ flowchart LR
 - `GLOBAL`
 - `UNKNOWN`
 
-The event determines region. A global publisher covering BOJ is ROW; a U.S.
-publisher covering PBOC is Greater China. Singapore is not Greater China.
+The event determines region. Precedence: explicit event geography; named
+institution/regulator jurisdiction (including identified official primary-source
+identity); affected market; known entity jurisdiction; explicit global semantics;
+UNKNOWN. Multiple credible jurisdictions at a level stay GLOBAL. Within a level,
+headline evidence precedes snippet evidence. Publisher/default region never fills
+an evidentiary gap. Generic Chinese `央行` is not evidence of China jurisdiction.
+Keyword mention is a conservative heuristic, not entity-role proof; ambiguous
+cross-border stories still require editorial review.
 
 ## 4. Event and Provenance Contract
 
@@ -75,21 +84,20 @@ are 96h for macro/regulation, 72h for RWA, 48h for market/other, and 36h for
 crypto. Invalid or absent timestamps remain `unknown` and are not selected as
 current intelligence.
 
-Materiality is deterministic and bounded 0-100. It combines source tier,
-policy/regulatory/systemic terms, surprise/deviation language, market breadth,
-and cross-market impact. It does not use random values or publisher popularity.
-Only explicit systemic phrases or a score of at least 85 qualify for a material
-override.
-
-The initial numeric model is heuristic, not calibrated market-impact data:
-tier contributes 24/17/12 (unknown 5); exceptional terms add 50, material policy
-terms add 31, other macro/regulation adds 23, market/crypto/RWA adds 15.
-Surprise language adds 10. Cross-market breadth starts at 20 and adds 24 per
-extra inferred market (macro/regulation minimum 58), capped at 100; 12% enters
-materiality. Cluster independence adds at most 12 points. Quality adds tier
-authority (12/7/3) and independent evidence (6 per extra group, capped at 12),
-then caps at 100. Narrative relevance is a category prior (65 or 48), not a
-claim that narrative strength was independently measured.
+Gate 2.2 separates authority from materiality. Administrative/calendar/personnel/
+educational fraud/procedural releases normally score 18, cross-market 20,
+narrative 20. Boilerplate systemic terms in an educational snippet cannot
+override that floor. A genuine explicit systemic headline can still qualify.
+Other semantic base scores: exceptional/systemic 92; actual policy-rate action
+75; inflation/employment/GDP data 70; material policy/trade/regulatory action
+65; geopolitical incident 58; relevant category 40; other 25.
+Surprise adds 10 (except already exceptional). Existing inferred market breadth
+adds 12% as before, bounded at 100. Source tier contributes zero to event
+materiality; cluster independent confirmation still adds at most 12.
+Override requires explicit exceptional semantics, or surprise plus score >=85,
+not mere official authority. Override never bypasses validity or freshness.
+These remain heuristics: a keyword-derived number is not measured market impact.
+Forward-looking previews containing macro words remain an editorial-review risk.
 
 ## 7. Ranking
 
@@ -107,16 +115,30 @@ Initial base score:
 A soft regional-deficit adjustment is then applied during deterministic greedy
 selection. Equal-quality, sufficiently deep candidate pools converge near
 6:3:1. Better events can override the target. A cluster must pass the quality
-floor (`40`) and freshness checks. Missing qualified regional events remain
+floor (materiality >=40 AND quality >=50), nonempty headline, positive freshness,
+and non-stale checks BEFORE weighting. Regional adjustment is
+`clamp(target - current_share, -0.15, 0.60) * 8`, bounded [-1.2, +4.8],
+instead of the original [-6, +24]. A large materiality gap cannot be filled by
+regional demand alone. Overrides retain +100 only after validity checks.
+Missing qualified regional events remain
 underweight and receive an explicit `regional_gap_reason`.
 
 ## 8. Shadow Isolation
 
 `FIONA_COVERAGE_PROFILE` accepts `legacy` and `global_631`; invalid values warn
-and resolve to `legacy`. During Gate 2, legacy remains the only selection
-authority even while the Shadow evaluator runs. It does not alter briefs,
-Telegram, delivery mode, occurrences, Alert behavior, scheduler cadence,
-arbitration, or the scheduler ledger.
+and resolve to `legacy`. Gate 2.2 adds `fiona_coverage_authority` as a single
+Market News selection boundary BEFORE presentation. Legacy preserves existing
+payload and Alert processing. Global selection projects the same evaluated
+clusters into the existing FionaEvent presentation contract, without executing
+Alert processing again. Narrative projection is in-memory, not another persisted
+narrative history. Operational engine failure or invalid selection falls back
+once to legacy; one source outage, underweight regions or a valid empty edition
+do not cause fallback. No second sender, renderer, occurrence or ledger is added.
+Production remains legacy: activating global_631 requires separate Product Review.
+Top-level metrics: configured_coverage_profile, selection_authority,
+coverage_fallback_used/reason, selected_cluster_count (global-authoritative
+clusters only; zero for legacy). The standalone Shadow evaluator remains
+read-only with respect to public selection.
 
 Per-evaluation metrics include candidate/qualified/selected counts, regional
 and tier distributions, unknown share, source/independence diversity, duplicate,
@@ -148,8 +170,8 @@ ranks in memory. It reports `telegram_api_calls=0`, `ledger_mutations=0`, and
 
 ## 11. Operational Boundaries
 
-Market News calls the safe Shadow evaluator synchronously after generating its
-legacy payload. Expanded adapters use six workers, a 12-second socket timeout,
+Market News evaluates coverage once before presentation. Expanded adapters use
+six workers, a 12-second socket timeout,
 4 MiB response cap and 50 normalized items per source. Socket timeout is not a
 hard whole-evaluation deadline; slow streaming/DNS and clustering remain latency
 risks to monitor. No retry storm or additional user-facing occurrence is added.
@@ -161,3 +183,11 @@ Rolling regional shares are edition-weighted; source diversity is explicitly an
 average of per-evaluation diversity. Stored history contains metrics, safe
 source health and hashed event membership, not headlines or article bodies.
 Neither local validators nor mock runs establish production observation start.
+Occurrence logging emits one compact aggregate record, one bounded health
+summary, and up to 10 compact selected-event records. Complete safe audits stay
+in the existing archive/history; emitted omissions are counted. Scheduler stdout
+is compact and references Shadow evaluation IDs instead of reprinting nested
+audit trees. Cadence, arbitration, returned status and ledger are unchanged.
+Confirmation sufficiency distinguishes authoritative_primary_source,
+single_secondary_source, and multi_independent_confirmation; this is internal
+audit metadata, not a new user-visible label or Confirmed Fact claim.

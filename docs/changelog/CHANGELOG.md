@@ -3,7 +3,21 @@
 版本：V3.1-alpha.2
 状态：Implemented / Shadow Candidate; Global selection not activated
 负责人：Wilson  
-更新时间：2026-09-05
+更新时间：2026-10-09
+
+## Gate 2.2 — Editorial Quality Remediation
+
+日期：2026-10-09；提交标题：`Remediate Fiona global coverage editorial quality`（SHA 由 Git 记录）。
+
+- 修复媒体默认地域造成的事件误分；明确地理、机构辖区、市场、实体、GLOBAL/UNKNOWN 顺序。
+- 分离官方身份与事件意义；行政通知通常 18 分，materiality >=40 / quality >=50 后才进入地域加权。
+- 保留动态 6:3:1，调整范围由 [-6,+24] 缩小到 [-1.2,+4.8]；重大 override 不绕过有效性与时效。
+- 新增集中选择入口，global_631 可替换 Market News 事件集，但生产仍 legacy；只在操作性失败时单次回退。
+- 聚类保守策略未放宽；增加官方单源、次级单源、多独立来源的内部审计标记。
+- 日志改为单行 aggregate / source health / 最多 10 条 selected event，完整安全记录保留归档。
+- 34 个日期、340 条已选标题做受限回放；不是完整候选重建。无当前新闻冒充历史输入。
+- HKMA 仍 UNHEALTHY / ISOLATED；不改连接器、持久化、调度、Telegram、语言、Alert 或其他 Brief。
+- Gate 2 OPEN / PASS WITH CONDITIONS；Gate 3 LOCKED；无生产激活，无 Closeout。
 
 ## Gate 2.1 - Shadow Editorial Observability
 

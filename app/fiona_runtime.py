@@ -24,6 +24,7 @@ from app.fiona_briefing import (
     build_weekly_brief,
 )
 from app.fiona_classifier import render_alert
+from app.fiona_coverage_authority import CoverageAuthority, coverage_events, resolve_coverage_authority
 from app.fiona_coverage_runtime import (
     run_global_coverage_shadow_safe,
     validate_global_coverage_runtime,
@@ -83,7 +84,7 @@ from app.fiona_scheduler import (
     write_uncertain_delivery_journal,
 )
 from app.fiona_source_registry import coverage_profile_from_env, load_source_registry, validate_registry
-from app.fiona_shadow_audit import emit_occurrence_audits
+from app.fiona_shadow_audit import emit_occurrence_audits, scheduler_log_projection
 from app.fiona_types import EventCategory, FionaEvent, MarketDirection, PushDecision
 from app.telegram_service import (
     send_document_with_caption as telegram_send_document,
@@ -178,7 +179,21 @@ def run_once(
     telegram_text_override: str | None = None
     try:
         snapshot = snapshot_builder(generated_at)
-        payload = build_payload(snapshot, generated_at, memory_path, brief, output_locale=output_locale)
+        authority: CoverageAuthority | None = None
+        requested_kind = (due_brief_kinds(generated_at)[:1] if str(brief).lower() == "auto"
+                          else [] if str(brief).lower() == "alert" else [brief_kind_from_name(brief)])
+        if requested_kind == [FionaBriefKind.MARKET_NEWS]:
+            authority = resolve_coverage_authority(
+                coverage_profile, run_global_coverage_shadow_safe,
+                legacy_items=latest_news_candidates() if snapshot_builder is build_snapshot else [],
+                output_dir=output_dir, evaluated_at=generated_at, logger=warning_logger,
+                collect_expanded=snapshot_builder is build_snapshot,
+                legacy_failures=latest_news_source_failures() if snapshot_builder is build_snapshot else {},
+            )
+            status.update(authority.metrics())
+            status["coverage_shadow"] = authority.shadow
+        payload = build_payload(snapshot, generated_at, memory_path, brief,
+                                output_locale=output_locale, coverage_authority=authority)
         if payload.brief is not None and payload.brief.kind == FionaBriefKind.MARKET_NEWS:
             market_news_mode = market_news_mode_from_env(
                 warning_logger=warning_logger
@@ -195,14 +210,6 @@ def run_once(
                     output_locale=output_locale,
                 )
                 telegram_text_override = compose_market_news_fallback_text(localized_market_news_view_model)
-            status["coverage_shadow"] = run_global_coverage_shadow_safe(
-                latest_news_candidates() if snapshot_builder is build_snapshot else [],
-                output_dir=output_dir,
-                evaluated_at=generated_at,
-                logger=warning_logger,
-                collect_expanded=snapshot_builder is build_snapshot,
-                legacy_failures=latest_news_source_failures() if snapshot_builder is build_snapshot else {},
-            )
         write_payload(
             latest_dir,
             archive_dir,
@@ -267,6 +274,7 @@ def build_payload(
     memory_path: Path,
     brief: BriefSelector,
     output_locale: OutputLocale | str = OutputLocale.ZH_CN,
+    coverage_authority: CoverageAuthority | None = None,
 ) -> FionaPayload:
     locale = output_locale if isinstance(output_locale, OutputLocale) else parse_output_locale(output_locale)
     memory = FionaMemory.load(memory_path)
@@ -280,6 +288,10 @@ def build_payload(
         for event in events
         if event.push_decision == PushDecision.SEND_NOW
     ]
+
+    if coverage_authority is not None and coverage_authority.selection_authority == "global_631":
+        events = coverage_events(coverage_authority, generated_at)
+        narratives = NarrativeEngine().build(events, now=generated_at)
 
     brief_obj = build_selected_brief(brief, events, narratives, snapshot, generated_at, output_locale=locale)
     if brief_obj is not None:
@@ -370,7 +382,8 @@ def run_scheduler(
                 "timezone": timezone_name,
                 "interval_minutes": interval,
             }
-        print(json.dumps({"scheduler_cycle": cycle, **status}, ensure_ascii=False, indent=2), flush=True)
+        print(json.dumps(scheduler_log_projection({"scheduler_cycle": cycle, **status}),
+                         ensure_ascii=False, separators=(",", ":")), flush=True)
         if max_cycles is not None and cycle >= max_cycles:
             return
         sleep_seconds = interval * 60

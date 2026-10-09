@@ -227,6 +227,7 @@ def run_global_coverage_shadow(
     collect_expanded: bool = True,
     fetcher: SourceFetcher = fetch_source_items,
     legacy_failures: dict[str, str] | None = None,
+    selection_sink: Callable[[CoverageEvaluation], None] | None = None,
 ) -> dict[str, Any]:
     source_registry = registry or load_source_registry()
     profile = coverage_profile_from_env(warning_logger=logger)
@@ -250,7 +251,7 @@ def run_global_coverage_shadow(
         source_health=health,
     )
     store = CoverageObservationStore.load(output_dir / COVERAGE_STATE_NAME)
-    audit = selected_event_audits(evaluation)
+    audit = {"editorial_rules_version": "gate2.2", **selected_event_audits(evaluation)}
     store.record(evaluation, audit)
     store.save()
     result = {
@@ -274,8 +275,8 @@ def run_global_coverage_shadow(
         "scheduler_ledger_mutations": 0,
         "formal_occurrences_created": 0,
     }
-    if logger is not None:
-        logger({"event": "fionaGlobalCoverageShadow", **result})
+    if selection_sink is not None:
+        selection_sink(evaluation)
     return result
 
 

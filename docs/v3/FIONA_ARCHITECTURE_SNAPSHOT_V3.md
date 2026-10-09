@@ -3,7 +3,31 @@
 - Version: V3.0.0 Production base + V3.1-alpha.2 Shadow Candidate
 - Status: Gate 1 CLOSED; Gate 2 implemented; global selection inactive
 - Owner: Fiona Engineering
-- Updated: 2026-09-05
+- Updated: 2026-10-09
+
+## Gate 2.2 Coverage Authority
+
+```mermaid
+flowchart LR
+    Snapshot --> Coverage[One Global Coverage Evaluation]
+    Coverage --> Authority[Central Coverage Authority]
+    Legacy[Existing Legacy Events] --> Authority
+    Authority -->|legacy production| Payload[Existing Market News Pipeline]
+    Authority -. global_631 inactive .-> Payload
+    Payload --> VM[Existing ViewModel]
+    VM --> Photo[Existing Renderer and Native Photo]
+    Coverage --> Audit[Aggregate + Health + Up to 10 Selected Logs]
+```
+
+Source authority no longer creates event materiality. Event geography has ordered
+evidence rules and UNKNOWN, not publisher fallback. Quality floor precedes the
+bounded soft 6:3:1 weighting. Operational global-engine failure falls back once;
+isolated source outage and legitimate empty/underweight selection do not.
+The bridge changes selection only when explicitly enabled; production remains
+legacy. Existing Alert processing runs once on its original events. Global
+presentation projection is not a second Alert pass or persisted narrative store.
+Scheduler stdout is compacted only; cadence, ledger and arbitration are unchanged.
+See [Gate 2.2](../v3_1/gates/GATE_2_2_EDITORIAL_QUALITY_REMEDIATION.md).
 
 ## Gate 2.1 Observability Projection
 
@@ -70,8 +94,10 @@ flowchart LR
     Rank --> Metrics[Shadow metrics and ephemeral 24h/7d history]
 ```
 
-Only Market News evaluates Shadow. Its result is not an input to the public
-brief, renderer, caption, or Telegram sender. The synchronous evaluator uses
+Only Market News evaluates Shadow. In production legacy mode its result is not
+an input to the public brief, renderer, caption, or Telegram sender. The inactive
+global_631 bridge can replace the presentation event set, never the delivery path.
+The synchronous evaluator uses
 bounded feed sizes, timeouts, and a safe failure boundary. It writes no
 scheduler ledger or occurrence. The history is not durable on Railway without
 a Volume; no Volume is added in this gate. Existing five task times, photo

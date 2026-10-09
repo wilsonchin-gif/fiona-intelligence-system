@@ -1,9 +1,20 @@
 # Fiona V3.1 Implementation Roadmap
 
 Version: V3.1-alpha.2
-Status: Gate 2 Implemented / Shadow Candidate; Gate 3 LOCKED
+Status: Gate 2 OPEN / Gate 2.2 remediation; Gate 3 LOCKED
 Owner: Wilson / Codex
-Updated: 2026-09-03
+Updated: 2026-10-09
+
+## Current Priority — Gate 2.2
+
+Correct event-region evidence, separate authority/materiality, bound regional
+weight and logs, and implement the inactive selection bridge. Thresholds for
+elapsed observation and cluster volume passed; editorial Product Review is still
+required. Production remains legacy/photo/en-US, cadence legacy, Delta off.
+Next: observe corrected real Shadow editions and review selection quality,
+unknown jurisdiction, independent confirmation, and HKMA isolation. Only a
+separate explicit activation task may enable global_631. Gate 3 remains LOCKED.
+See [remediation](gates/GATE_2_2_EDITORIAL_QUALITY_REMEDIATION.md).
 
 ## 1. Delivery Model
 
@@ -161,7 +172,7 @@ fallback behavior, full tests, documentation, and exact release boundary. Stop.
 - Implementation commits: `d0ea66931bdedf0cacbf3df451379ddbd327ea67`
   and `87d046884375fe0fc64fe8e35e009f04dad77c46`.
 - Verdict: **CLOSED - PRODUCTION VALIDATED**.
-- Gate 2: **NOT STARTED**.
+- Gate 2: **OPEN / PASS WITH CONDITIONS**; implementation and production Shadow exist.
 
 ## 4. Gate/Wave 2 - Global Coverage Engine
 

@@ -684,7 +684,8 @@ class EvidenceSafetyRegressionTests(unittest.TestCase):
     def test_shadow_log_failure_is_contained(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             result = run_global_coverage_shadow_safe([], output_dir=Path(tmp), evaluated_at=NOW, collect_expanded=False, logger=Mock(side_effect=OSError("log unavailable")))
-        self.assertFalse(result["ok"])
+        # Success no longer calls the verbose logger; optional logging cannot fail selection.
+        self.assertTrue(result["ok"])
         self.assertEqual(result["selection_authority"], "legacy")
 
     def test_invalid_profile_warns_and_falls_back(self) -> None:

@@ -24,7 +24,8 @@ from app.fiona_briefing import FionaBriefKind
 def fixtures():
     return {
         "balanced": synthetic_regional_events({EventRegion.US_EU: 8, EventRegion.GREATER_CHINA: 4, EventRegion.REST_OF_WORLD: 3}),
-        "override": [event(title="Bank failure creates systemic crisis", materiality=98, override=True), *synthetic_regional_events({EventRegion.US_EU: 6, EventRegion.GREATER_CHINA: 3, EventRegion.REST_OF_WORLD: 3})],
+        # Retain the original fixture's captured region, not the removed publisher fallback.
+        "override": [replace(event(title="Bank failure creates systemic crisis", materiality=98, override=True), event_region=EventRegion.US_EU), *synthetic_regional_events({EventRegion.US_EU: 6, EventRegion.GREATER_CHINA: 3, EventRegion.REST_OF_WORLD: 3})],
         "syndicated": [event(source("a")), event(source("b"))],
         "empty": [],
     }
@@ -87,7 +88,10 @@ class ShadowEditorialAuditTests(unittest.TestCase):
     def test_before_after_fixed_ranking_and_aggregate_equivalence(self):
         for name, inputs in fixtures().items():
             with self.subTest(fixture=name):
-                e = evaluate_global_coverage(inputs, evaluated_at=NOW)
+                # Preserve the Gate 2.1 historical non-mutating audit contract.
+                # Gate 2.2's deliberately smaller regional weight is tested separately.
+                with patch("app.fiona_global_coverage.REGIONAL_ADJUSTMENT_SCALE", 40):
+                    e = evaluate_global_coverage(inputs, evaluated_at=NOW)
                 before = copy.deepcopy(e)
                 audit = selected_event_audits(e)
                 ids, digest = BASELINES[name]
@@ -155,12 +159,12 @@ class ShadowEditorialAuditTests(unittest.TestCase):
         run = {"coverage_shadow": self.audit}
         before = copy.deepcopy(run)
         emit_occurrence_audits(run, "market_news:2026-09-04T00:00:00+08:00", calls)
-        self.assertEqual(calls.call_count, 10)
+        self.assertEqual(calls.call_count, 12)
         for call in calls.call_args_list:
             self.assertNotIn("\n", call.args[0])
             record = json.loads(call.args[0])
             self.assertEqual(record["occurrence_id"], "market_news:2026-09-04T00:00:00+08:00")
-            self.assertEqual(record["event"], "fionaShadowSelectedEvent")
+            self.assertIn(record["event"], {"fionaShadowSelectedEvent", "fionaGlobalCoverageShadow", "fionaShadowSourceHealth"})
             self.assertLess(len(call.args[0].encode()), 8000)
         self.assertEqual(run, before)
 
@@ -181,7 +185,7 @@ class ShadowEditorialAuditTests(unittest.TestCase):
             r = occurrence_result(occurrence, "success", True, "delivered", run)
         self.assertIs(r["run_status"], run)
         self.assertEqual(r["status"], "success")
-        self.assertEqual(len(output.getvalue().splitlines()), 10)
+        self.assertEqual(len(output.getvalue().splitlines()), 12)
 
     def test_runtime_store_and_zero_side_effects(self):
         spec = source("legacy", legacy=True)
