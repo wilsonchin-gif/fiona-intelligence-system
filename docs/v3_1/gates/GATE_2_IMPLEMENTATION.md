@@ -1,5 +1,10 @@
 # Fiona V3.1 Gate 2 Implementation
 
+Current addendum (2026-10-24): Gate2.4B/B.1 editorial qualification is approved
+for controlled Shadow release only after final preflight PASS. Parent Gate2 OPEN;
+production legacy remains authoritative; Gate3 LOCKED. Earlier wave status below
+is historical. See [Gate2.4B](GATE_2_4B_EDITORIAL_QUALIFICATION.md).
+
 - Internal version: V3.1-alpha.2
 - Status: OPEN / PASS WITH CONDITIONS; Gate 2.2 remediation
 - Verdict: PASS WITH CONDITIONS

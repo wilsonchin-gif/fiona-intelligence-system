@@ -1,9 +1,62 @@
 # Fiona Global Coverage Engine 6:3:1
 
 - Version: V3.1-alpha.2
-- Status: Gate 2.2 remediation; production legacy; Gate 2 OPEN
+- Status: Gate 2.4B/B.1 controlled Shadow release candidate; production legacy; Gate 2 OPEN
 - Owner: Fiona Engineering
-- Updated: 2026-10-09
+- Updated: 2026-10-24
+
+## Controlled Shadow contract — Gate 2.4B/B.1
+
+The local candidate supersedes the Gate 2.2 heuristic sections below; those
+sections describe the still-deployed historical baseline, not the new contract.
+See [full contract, evidence limits and validation](gates/GATE_2_4B_EDITORIAL_QUALIFICATION.md).
+
+```mermaid
+flowchart LR
+    Event --> Assertion --> FinancialRelevance --> Geography
+    Geography --> Materiality --> IndependentEvidence --> Cluster
+    History[Existing 21-day Shadow history] --> Novelty
+    Cluster --> Novelty --> Eligibility --> SoftRegionalRank
+    SoftRegionalRank --> QualifiedOverride --> Selection
+    Selection --> Audit[Bounded selected and rejected evidence]
+    Audit --> History
+```
+
+Eligibility is independent of source content category and registry market lists.
+Source-supported markets and event-supported markets are separate. Unknown and
+nonfinancial content cannot fill regional slots. Assertion types separate actual
+events, announcements, observations, expectations, scenarios and speculation.
+Grammatical assertions and heuristic quality do not establish Confirmed Fact.
+
+Quality now uses traceability, source authority, timestamps, specificity,
+assertion evidence and bounded independent corroboration; it is not M+Tier.
+Materiality has no authority/corroboration bonus. Rank weights are M46%, event
+breadth13%, freshness15%, quality18%, narrative8%. Floors remain M40/Q50;
+regional adjustment remains [-1.2,+4.8]. At most10, no mandatory ten or quotas.
+
+Geography preserves primary/secondary/participating jurisdictions and evidence;
+no publisher fallback and no first-region short circuit. Novelty uses one index
+of selected records from the existing history, loaded before evaluation.
+Same facts are withheld; explicit revised outcomes and named new release periods
+can qualify. Unknown baseline is explicit, corrupt history is preserved, writes
+remain atomic. This is editorial deduplication, not Gate 3 4H Delta.
+
+Override requires eligible, traceable, current event-level evidence and a
+supported non-negated assertion. A hypothetical Fed surprise cannot use it.
+Selected audits include all qualification decisions; at most20 rejected summaries
+(16KB list budget) are retained with omission counts, never the full pool/body.
+
+The root JSON schema stays3.1 with editorial_state_version=gate2.4b.1; old
+gate2.4b identity records remain readable with conservative UNKNOWN semantics.
+Summary-aware assertion/relevance and explicit source-session identity follow
+the B.1 correction appendix. Synthetic reconstructed history cannot prove UNCHANGED.
+The 21-day
+retention stays unchanged. Current Railway already has the Gate2.3 Volume;
+without one file state would still be ephemeral. No new infrastructure here.
+Legacy selection/Telegram/Alerts/cadence remain unchanged. Local global_631
+validation exercises the existing bridge only; activation remains prohibited.
+
+## Historical Gate 2.2 baseline (not the revised local algorithm)
 
 ## 1. Product Rule
 

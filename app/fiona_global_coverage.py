@@ -20,6 +20,11 @@ from enum import Enum
 from typing import Any, Callable, Iterable, Sequence
 
 from app.fiona_source_registry import EventRegion, SourceSpec, SourceTier
+from app.fiona_editorial import (
+    EditorialAssessment, NoveltyDecision, NoveltyIndex, NoveltyStatus,
+    AssertionType, assess_event, affected_markets, EDITORIAL_VERSION,
+    assertion_for, geography_for, materiality_for_assessment, relevance_for,
+)
 
 
 USER_AGENT = "Mozilla/5.0 FionaIntelligence/3.1 (+public-feed-validator)"
@@ -110,6 +115,7 @@ class NormalizedCoverageEvent:
     source_provenance: SourceProvenance
     material_override: bool = False
     override_reason: str = ""
+    editorial: EditorialAssessment | None = None
 
     def to_dict(self, *, include_snippet: bool = False) -> dict[str, Any]:
         provenance = self.source_provenance.to_dict()
@@ -137,6 +143,7 @@ class NormalizedCoverageEvent:
             "source_provenance": provenance,
             "material_override": self.material_override,
             "override_reason": self.override_reason,
+            "editorial": self.editorial.to_dict() if self.editorial else None,
         }
 
 
@@ -184,15 +191,14 @@ class EventCluster:
     material_override: bool = False
     override_reason: str = ""
     ranking_score: float = 0.0
+    editorial: EditorialAssessment | None = None
+    novelty: NoveltyDecision = field(default_factory=NoveltyDecision)
 
     @property
     def quality_score(self) -> float:
-        authority = {SourceTier.TIER_1: 12, SourceTier.TIER_2: 7, SourceTier.TIER_3: 3}.get(
-            self.source_tier,
-            0,
-        )
-        independent_confirmation = min(12, max(0, self.independent_source_count - 1) * 6)
-        return min(100.0, self.materiality + authority + independent_confirmation)
+        applicable = [e for e in self.events if e.editorial and e.editorial.relevance.eligible]
+        evidence = max((e.editorial.evidence_quality.value for e in applicable or self.events if e.editorial), default=0)
+        return min(100.0, evidence + min(15, max(0, self.independent_source_count - 1) * 8))
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -232,6 +238,7 @@ class CoverageEvaluation:
     selected_clusters: list[EventCluster]
     source_health: list[SourceHealth]
     metrics: dict[str, Any]
+    quality_floor: int = QUALITY_FLOOR
 
     def to_dict(self, *, include_events: bool = False) -> dict[str, Any]:
         payload = {
@@ -452,47 +459,7 @@ ENTITY_JURISDICTIONS = (
 
 
 def infer_event_region(title: str, summary: str, source: SourceSpec) -> EventRegion:
-    non_locations = {normalized_text(term) for table in (
-        INSTITUTION_JURISDICTIONS, MARKET_JURISDICTIONS, ENTITY_JURISDICTIONS
-    ) for _, terms in table for term in terms}
-    location_keywords = tuple((region, tuple(term for term in terms if normalized_text(term) not in non_locations))
-                              for region, terms in REGION_KEYWORDS)
-    # An explicit location outranks institutions, markets and entities. Conflicts stay global.
-    for table in (location_keywords, INSTITUTION_JURISDICTIONS):
-        for text in (title, summary):
-            searchable = normalized_text(text)
-            regions = {region for region, keywords in table if any(has_term(searchable, keyword) for keyword in keywords)}
-            if len(regions) == 1:
-                return next(iter(regions))
-            if len(regions) > 1:
-                return EventRegion.GLOBAL
-    official_jurisdictions = {
-        "fed": EventRegion.US_EU, "sec": EventRegion.US_EU,
-        "ecb": EventRegion.US_EU, "boe": EventRegion.US_EU,
-        "hkma": EventRegion.GREATER_CHINA, "hkex": EventRegion.GREATER_CHINA,
-        "pboc": EventRegion.GREATER_CHINA,
-        "boj": EventRegion.REST_OF_WORLD, "rbi": EventRegion.REST_OF_WORLD,
-        "bok": EventRegion.REST_OF_WORLD,
-        "fed_press": EventRegion.US_EU, "sec_press": EventRegion.US_EU,
-        "ecb_press": EventRegion.US_EU, "boe_news": EventRegion.US_EU,
-        "hkma_press": EventRegion.GREATER_CHINA, "hkex_news": EventRegion.GREATER_CHINA,
-        "boj_whatsnew": EventRegion.REST_OF_WORLD, "rbi_press": EventRegion.REST_OF_WORLD,
-        "bok_press": EventRegion.REST_OF_WORLD, "rba_media": EventRegion.REST_OF_WORLD,
-    }
-    if source.source_type in {"Primary", "Official"} and source.source_id in official_jurisdictions:
-        return official_jurisdictions[source.source_id]
-    for table in (MARKET_JURISDICTIONS, ENTITY_JURISDICTIONS):
-        for text in (title, summary):
-            searchable = normalized_text(text)
-            regions = {region for region, terms in table if any(has_term(searchable, term) for term in terms)}
-            if len(regions) == 1:
-                return next(iter(regions))
-            if len(regions) > 1:
-                return EventRegion.GLOBAL
-    if any(has_term(normalized_text(text), term) for text in (title, summary)
-           for term in ("global", "worldwide", "cross regional")):
-        return EventRegion.GLOBAL
-    return EventRegion.UNKNOWN
+    return geography_for(title, summary, source, REGION_KEYWORDS).canonical_editorial_region
 
 
 CATEGORY_KEYWORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
@@ -535,19 +502,8 @@ def infer_entities(title: str, summary: str) -> tuple[str, ...]:
 
 
 def infer_markets(title: str, summary: str, source: SourceSpec) -> tuple[str, ...]:
-    searchable = normalized_text(f"{title} {summary}")
-    markets = set(source.markets)
-    if any(word in searchable for word in ("bitcoin", "ethereum", "crypto", "stablecoin", "blockchain")):
-        markets.add("crypto")
-    if any(word in searchable for word in ("stock", "equity", "nasdaq", "s&p", "shares", "hkex", "twse")):
-        markets.add("equities")
-    if any(word in searchable for word in ("bond", "yield", "treasury", "interest rate", "central bank")):
-        markets.add("rates")
-    if any(word in searchable for word in ("dollar", "yen", "yuan", "euro", "sterling", "currency", "fx")):
-        markets.add("fx")
-    if any(word in searchable for word in ("commodity", "oil", "gold")):
-        markets.add("commodities")
-    return tuple(sorted(markets))
+    # Registry coverage is a source capability, never event-level market evidence.
+    return affected_markets(title, summary)
 
 
 def freshness_window_hours(category: str) -> int:
@@ -609,75 +565,15 @@ def contains_material_override(searchable: str) -> bool:
 
 
 def materiality_for(
-    title: str,
-    summary: str,
-    source: SourceSpec,
-    category: str,
-    markets: Sequence[str],
+    title: str, summary: str, source: SourceSpec, category: str, markets: Sequence[str],
 ) -> tuple[int, int, int, bool, str]:
-    searchable = normalized_text(f"{title} {summary}")
-    exceptional_event = contains_material_override(searchable)
-    title_text = normalized_text(title)
-    administrative = bool(re.search(
-        r"\b(calendar|committee dates|meeting dates|appointment|appointments|personnel|"
-        r"scam alert|fraud awareness|educational|housekeeping|procedural|"
-        r"coupon interest|weekly statistical|turnover data|diversity at|"
-        r"student loan|auction calendar|interest payment|tender results|"
-        r"underwriting auction|reminds public|stay alert|phishing scams|"
-        r"regular review|extension of period)\b", title_text
-    ))
-    if administrative and not contains_material_override(title_text):
-        return 18, 20, 20, False, ""
-    monetary_context = any(has_term(title_text, term) for term in (
-        "policy rate", "policy rates", "bank rate", "interest rate", "interest rates",
-        "benchmark rate", "monetary policy", "rate decision", "federal reserve", "fed",
-        "ecb", "boj", "pboc", "bank of england", "reserve bank"
-    ))
-    rate_action = monetary_context and bool(re.search(
-        r"\b(rate decision|policy rates?|bank rate|interest rates?|rates)\b.*"
-        r"\b(decision|cut|cuts|hike|hikes|raise|raises|lower|lowers|maintained|unchanged|hold|holds)\b"
-        r"|\b(rate decision|emergency rate cut|emergency rate hike)\b"
-        r"|\b(cuts?|hikes?|raises?|lowers?|holds?|maintains?)\b.{0,40}\brates?\b", title_text
-    ))
-    macro_data = any(has_term(searchable, term) for term in (
-        "inflation", "consumer price", "gross domestic product", "gdp", "payroll", "unemployment"
-    ))
-    financial_rate_signal = any(has_term(title_text, term) for term in (
-        "bond yields", "treasury yields", "rate expectations", "mortgage rates"
-    )) and bool(re.search(r"\b(surge|surges|jump|jumps|rise|rises|fall|falls|drop|drops|repricing|higher|lower)\b", title_text))
-    market_action = any(has_term(searchable, term) for term in (
-        "tariff", "tariffs", "sanction", "sanctions", "enforcement action", "enforcement actions", "new regulation", "fiscal stimulus",
-        "capital requirement", "liquidity injection", "policy decision", "policy statement"
-    ))
-    surprise = any(has_term(searchable, term) for term in ("unexpected", "surprise", "emergency"))
-    if exceptional_event:
-        score = 92
-    elif administrative:
-        return 18, 20, 20, False, ""
-    elif rate_action:
-        score = 75
-    elif macro_data:
-        score = 70
-    elif market_action or financial_rate_signal:
-        score = 65
-    elif any(has_term(searchable, term) for term in ("war", "bomb blast", "explosion", "invasion")):
-        score = 58
-    elif category in {"rwa", "crypto", "market", "macro_policy", "regulation"}:
-        score = 40
-    else:
-        score = 25
-    if surprise and not exceptional_event:
-        score += 10
-    market_count = len(set(markets))
-    cross_market = min(100, 20 + max(0, market_count - 1) * 24)
-    if category in {"macro_policy", "regulation"}:
-        cross_market = max(cross_market, 58)
-    score += round(cross_market * 0.12)
-    narrative_relevance = 65 if category in {"macro_policy", "regulation", "rwa"} else 48
-    materiality = max(0, min(100, score))
-    material_override = exceptional_event or (surprise and materiality >= 85)
-    override_reason = "systemic_or_exceptional_material_event" if material_override else ""
-    return materiality, cross_market, narrative_relevance, material_override, override_reason
+    """Compatibility score helper; production override requires full assess_event evidence."""
+    assertion = assertion_for(title, summary)
+    relevance = relevance_for(title, summary)
+    event_markets = affected_markets(title, summary) if relevance.eligible else ()
+    score, cross, narrative = materiality_for_assessment(title, summary, assertion, relevance, event_markets)
+    # This helper has no URL or timestamp and cannot authorize an override.
+    return score, cross, narrative, False, "evidence_not_supplied"
 
 
 def stable_event_id(source_id: str, url: str, title: str, published_at: datetime | None) -> str:
@@ -704,18 +600,16 @@ def normalize_source_item(
         else raw.get("published_at") or raw.get("published")
     )
     published_at = parse_source_timestamp(published_value)
-    event_region = infer_event_region(title, summary, source)
+    editorial = assess_event(title, summary, source, source_url, published_at,
+                             ensure_aware(retrieved_at), REGION_KEYWORDS,
+                             reconstructed=raw.get("evidence_origin") == "RECONSTRUCTED_ASSUMPTION")
+    event_region = editorial.geography.canonical_editorial_region
     category = infer_category(title, summary, source)
     entities = infer_entities(title, summary)
-    markets = infer_markets(title, summary, source)
+    markets = editorial.event_affected_markets
     freshness, freshness_score = freshness_for(published_at, retrieved_at, category)
-    materiality, cross_market, narrative, override, override_reason = materiality_for(
-        title,
-        summary,
-        source,
-        category,
-        markets,
-    )
+    materiality, cross_market, narrative = editorial.materiality, editorial.cross_market_impact, editorial.narrative_relevance
+    override, override_reason = editorial.override_eligible, editorial.override_reason
     provenance = SourceProvenance(
         source_id=source.source_id,
         source_name=source.name,
@@ -753,6 +647,7 @@ def normalize_source_item(
         source_provenance=provenance,
         material_override=override,
         override_reason=override_reason,
+        editorial=editorial,
     )
 
 
@@ -1039,17 +934,17 @@ def _cluster_from_events(
     duplicate_count: int,
     syndication_count: int,
 ) -> EventCluster:
+    relevant = [e for e in events if e.editorial and e.editorial.relevance.eligible]
     representative = sorted(
-        events,
+        relevant or events,
         key=lambda item: (-item.materiality, int(item.source_tier) if item.source_tier else 99, item.event_id),
     )[0]
     unique_sources = {event.source_id for event in events}
     independence_groups = independent_evidence_groups(events)
     known_tiers = [event.source_tier for event in events if event.source_tier != SourceTier.UNKNOWN]
     tier = min(known_tiers, default=SourceTier.UNKNOWN)
-    independent_bonus = min(12, max(0, len(independence_groups) - 1) * 4)
-    materiality = min(100, max(event.materiality for event in events) + independent_bonus)
-    overrides = [event for event in events if event.material_override]
+    materiality = representative.materiality
+    overrides = [event for event in relevant if event.material_override and event.editorial.override_eligible]
     return EventCluster(
         cluster_id=_cluster_id(events),
         events=sorted(events, key=lambda item: item.event_id),
@@ -1068,6 +963,7 @@ def _cluster_from_events(
         stale=all(event.freshness in {FreshnessStatus.STALE, FreshnessStatus.UNKNOWN} for event in events),
         material_override=bool(overrides),
         override_reason=overrides[0].override_reason if overrides else "",
+        editorial=representative.editorial,
     )
 
 
@@ -1108,58 +1004,56 @@ def cluster_events(
 
 
 def base_ranking_score(cluster: EventCluster) -> float:
-    authority = {SourceTier.TIER_1: 100, SourceTier.TIER_2: 70, SourceTier.TIER_3: 40}.get(
-        cluster.source_tier,
-        10,
-    )
-    confirmation = min(100, 35 + max(0, cluster.independent_source_count - 1) * 25)
-    return (
-        cluster.materiality * 0.46
-        + cluster.cross_market_impact * 0.13
-        + cluster.freshness_score * 0.15
-        + authority * 0.10
-        + confirmation * 0.08
-        + cluster.narrative_relevance * 0.08
-    )
+    return (cluster.materiality * .46 + cluster.cross_market_impact * .13
+            + cluster.freshness_score * .15 + cluster.quality_score * .18
+            + cluster.narrative_relevance * .08)
+
+
+def eligibility_rejection(cluster: EventCluster, quality_floor: int = QUALITY_FLOOR) -> tuple[str, str] | None:
+    editorial = cluster.editorial
+    if editorial is None:
+        return "evidence", "missing_editorial_contract"
+    if editorial.assertion.assertion_type in {AssertionType.UNKNOWN, AssertionType.SPECULATION}:
+        return "assertion", "unsupported_or_speculative_assertion"
+    if not editorial.relevance.eligible:
+        return "financial_relevance", editorial.relevance.relevance_reason
+    if cluster.materiality < MATERIALITY_FLOOR:
+        return "materiality", "below_materiality_floor"
+    if cluster.quality_score < quality_floor:
+        return "evidence", "below_independent_evidence_floor"
+    if cluster.stale or cluster.freshness_score <= 0 or not cluster.normalized_headline.strip():
+        return "freshness", "stale_missing_time_or_empty_headline"
+    if cluster.novelty.status == NoveltyStatus.UNCHANGED:
+        return "novelty", "unchanged_previous_selection"
+    if cluster.novelty.status == NoveltyStatus.UNKNOWN and cluster.novelty.previous_selected_at:
+        return "novelty", "material_follow_up_not_established"
+    return None
 
 
 def rank_coverage_clusters(
-    clusters: Sequence[EventCluster],
-    *,
-    limit: int = DEFAULT_SELECTION_LIMIT,
+    clusters: Sequence[EventCluster], *, limit: int = DEFAULT_SELECTION_LIMIT,
     quality_floor: int = QUALITY_FLOOR,
 ) -> tuple[list[EventCluster], list[EventCluster], int]:
     stale_rejections = sum(1 for cluster in clusters if cluster.stale)
-    qualified = [
-        cluster
-        for cluster in clusters
-        if (not cluster.stale and cluster.materiality >= MATERIALITY_FLOOR
-            and cluster.quality_score >= quality_floor
-            and cluster.freshness_score > 0 and cluster.normalized_headline.strip())
-    ]
+    qualified = [c for c in clusters if eligibility_rejection(c, quality_floor) is None]
     qualified.sort(key=lambda item: (-base_ranking_score(item), item.cluster_id))
     selected: list[EventCluster] = []
     remaining = list(qualified)
-
-    overrides = [cluster for cluster in remaining if cluster.material_override]
-    for cluster in overrides:
+    target_limit = max(0, min(DEFAULT_SELECTION_LIMIT, limit))
+    # Override is a promotion of an eligible event, never a second qualification path.
+    for cluster in [c for c in remaining if c.material_override][:target_limit]:
         cluster.ranking_score = base_ranking_score(cluster) + 100
         selected.append(cluster)
         remaining.remove(cluster)
-
-    target_limit = max(limit, len(selected))
     while remaining and len(selected) < target_limit:
-        selected_counts = Counter(cluster.event_region for cluster in selected)
+        counts = Counter(c.event_region for c in selected)
         denominator = max(1, len(selected))
 
         def dynamic_score(cluster: EventCluster) -> tuple[float, float, str]:
             target = REGIONAL_TARGETS.get(cluster.event_region)
-            regional_bonus = 0.0
-            if target is not None:
-                current_share = selected_counts[cluster.event_region] / denominator
-                regional_bonus = max(-0.15, min(0.60, target - current_share)) * REGIONAL_ADJUSTMENT_SCALE
-            score = base_ranking_score(cluster) + regional_bonus
-            return score, cluster.quality_score, cluster.cluster_id
+            bonus = (max(-.15, min(.60, target - counts[cluster.event_region] / denominator))
+                     * REGIONAL_ADJUSTMENT_SCALE) if target is not None else 0.0
+            return base_ranking_score(cluster) + bonus, cluster.quality_score, cluster.cluster_id
 
         chosen = max(remaining, key=dynamic_score)
         chosen.ranking_score = dynamic_score(chosen)[0]
@@ -1255,8 +1149,14 @@ def evaluate_global_coverage(
     source_health: Sequence[SourceHealth] = (),
     limit: int = DEFAULT_SELECTION_LIMIT,
     quality_floor: int = QUALITY_FLOOR,
+    editorial_history: Sequence[dict[str, Any]] = (),
+    history_available: bool = True,
 ) -> CoverageEvaluation:
     clusters, diagnostics = cluster_events(events)
+    novelty = NoveltyIndex(editorial_history, evaluated_at, history_available=history_available)
+    for cluster in clusters:
+        if cluster.editorial:
+            cluster.novelty = novelty.decide(cluster.editorial.memory)
     qualified, selected, stale_rejections = rank_coverage_clusters(
         clusters,
         limit=limit,
@@ -1270,6 +1170,13 @@ def evaluate_global_coverage(
         diagnostics,
         stale_rejections,
     )
+    metrics["editorial_rules_version"] = EDITORIAL_VERSION
+    metrics["selection_shortfall_reason"] = (
+        "insufficient_independently_eligible_events" if len(selected) < min(limit, DEFAULT_SELECTION_LIMIT) else None
+    )
+    metrics["editorial_rejection_counts"] = dict(Counter(
+        rejection[0] for c in clusters if (rejection := eligibility_rejection(c, quality_floor))
+    ))
     return CoverageEvaluation(
         evaluated_at=ensure_aware(evaluated_at),
         candidate_events=list(events),
@@ -1278,4 +1185,5 @@ def evaluate_global_coverage(
         selected_clusters=selected,
         source_health=list(source_health),
         metrics=metrics,
+        quality_floor=quality_floor,
     )

@@ -1,5 +1,10 @@
 # Gate 2.2 — Editorial Quality Remediation
 
+2026-10-24 后续：七轮70条编辑验收未通过，Gate2.4A确认独立相关性/断言/质量/
+跨区/新颖性缺口。Gate2.4B/B.1 已获得门禁通过后的受控Shadow发布授权；
+实际部署与编辑验收仍需验证，本文保留为历史规则与证据。
+见 [Gate2.4B](GATE_2_4B_EDITORIAL_QUALIFICATION.md)。生产仍legacy，Gate2 OPEN，Gate3 LOCKED。
+
 日期：2026-10-09。负责人：Wilson / Codex。
 父 Gate：OPEN / PASS WITH CONDITIONS。Gate 3：LOCKED。
 生产覆盖：legacy；本任务不激活 global_631。

@@ -150,8 +150,9 @@ def synthetic_regional_events(
             spec = source(f"{region.value.lower()}_{index}", region=region, tier=tier)
             item = event(
                 spec,
-                title=f"{labels[region]} {unique_markers[index % len(unique_markers)]} development",
-                summary=f"Evidence concerns {unique_markers[index % len(unique_markers)]} conditions in {labels[region]}.",
+                # Ranking fixtures now provide event evidence, not a generic category label.
+                title=f"{labels[region]} {unique_markers[index % len(unique_markers)]} bond yields rise",
+                summary=f"The {unique_markers[index % len(unique_markers)]} bond yield rose 12 basis points in {labels[region]}.",
                 materiality=materiality,
                 override=False,
             )
@@ -364,7 +365,7 @@ class RankingTests(unittest.TestCase):
 
     def test_36_material_override_works(self) -> None:
         ordinary = event(source("ordinary"), materiality=80, override=False)
-        override_event = event(source("override", region=EventRegion.REST_OF_WORLD), title="BOJ emergency intervention", materiality=90, override=True)
+        override_event = event(source("override", region=EventRegion.REST_OF_WORLD), title="BOJ emergency rate hike", materiality=90, override=True)
         clusters, _ = cluster_events([ordinary, override_event])
         _, selected, _ = rank_coverage_clusters(clusters, limit=1)
         self.assertIn(next(item for item in clusters if item.material_override), selected)
@@ -383,8 +384,8 @@ class RankingTests(unittest.TestCase):
         self.assertEqual(result.metrics["stale_rejection_count"], 1)
 
     def test_39_tier1_contributes_higher_authority(self) -> None:
-        tier1 = event(source("tier1", tier=SourceTier.TIER_1), title="Official market operation alpha", materiality=50, override=False)
-        tier3 = event(source("tier3", tier=SourceTier.TIER_3), title="Specialist market observation beta", materiality=50, override=False)
+        tier1 = event(source("tier1", tier=SourceTier.TIER_1), title="Treasury yields rise alpha", materiality=50, override=False)
+        tier3 = event(source("tier3", tier=SourceTier.TIER_3), title="Mortgage rates rise beta", materiality=50, override=False)
         clusters, _ = cluster_events([tier1, tier3])
         _, selected, _ = rank_coverage_clusters(clusters, limit=1)
         self.assertEqual(selected[0].source_tier, SourceTier.TIER_1)
@@ -404,8 +405,8 @@ class RankingTests(unittest.TestCase):
         self.assertGreater(confirmed_cluster[0].quality_score, one_cluster[0].quality_score)
 
     def test_42_cross_market_material_event_promoted(self) -> None:
-        broad = event(source("broad"), title="Broad liquidity transmission event", materiality=50, cross_market=100, override=False)
-        narrow = event(source("narrow"), title="Narrow single market event", materiality=50, cross_market=10, override=False)
+        broad = event(source("broad"), title="Broad market liquidity injection announced", materiality=50, cross_market=100, override=False)
+        narrow = event(source("narrow"), title="Narrow bond yields rise", materiality=50, cross_market=10, override=False)
         clusters, _ = cluster_events([broad, narrow])
         _, selected, _ = rank_coverage_clusters(clusters, limit=1)
         self.assertEqual(selected[0].cross_market_impact, 100)

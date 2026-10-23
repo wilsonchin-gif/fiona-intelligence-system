@@ -3,7 +3,26 @@
 版本：V3.1-alpha.2
 状态：Implemented / Shadow Candidate; Global selection not activated
 负责人：Wilson  
-更新时间：2026-10-09
+更新时间：2026-10-24
+
+## Gate 2.4B/B.1 — Controlled Editorial Shadow Release
+
+日期：2026-10-24；发布前检查：PASS；状态：CONTROLLED SHADOW RELEASE CANDIDATE。
+Commit：包含本记录的发布提交；实际上线状态须通过 Railway 部署与自然周期验收确认。
+
+- 新增纯确定性相关性、断言、独立证据、地域角色、编辑新颖性及证据约束 override。
+- 修复 Golden/gold 子串、来源市场先验膨胀、Q依赖M、条件利率分析误获override。
+- 复用21天原Shadow历史，在排名前构建一次索引；保留损坏历史、显式标记未知基线。
+- 扩展入选审计和最多20条/16KB落选摘要；不记录全文或新增远程推理。
+- 新增30类合成语料、70条保留标题及受限比较；不声称完整历史回放或生产合格率。
+- 影响范围仅 Coverage 编辑资格/审计/测试/文档；旧纯评分 helper 不再授权override。
+- 未修改或删除生产 Scheduler/Ledger/Telegram/Alert/Renderer/Brief/来源配置；legacy权威不变。
+- B.1 修复通用标题忽略摘要及模拟身份误判 UNCHANGED；保留已发生、预期、条件和矛盾区别。
+- 当前重新验证101项专项、581项全量测试及编译通过；确定性测试网络调用0。
+- 只授权一个精确边界提交、正常push及Railway自动部署；不改变量，不激活global_631；Gate2 OPEN，Gate3 LOCKED。
+- [完整契约、测试及边界](../v3_1/gates/GATE_2_4B_EDITORIAL_QUALIFICATION.md)。
+
+下方既有记录保留为历史，不代表当前本地候选已上线。
 
 ## Gate 2.2 — Editorial Quality Remediation
 

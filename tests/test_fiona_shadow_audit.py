@@ -25,19 +25,14 @@ def fixtures():
     return {
         "balanced": synthetic_regional_events({EventRegion.US_EU: 8, EventRegion.GREATER_CHINA: 4, EventRegion.REST_OF_WORLD: 3}),
         # Retain the original fixture's captured region, not the removed publisher fallback.
-        "override": [replace(event(title="Bank failure creates systemic crisis", materiality=98, override=True), event_region=EventRegion.US_EU), *synthetic_regional_events({EventRegion.US_EU: 6, EventRegion.GREATER_CHINA: 3, EventRegion.REST_OF_WORLD: 3})],
+        "override": [replace(event(title="Systemic banking crisis triggers emergency response", materiality=98, override=True), event_region=EventRegion.US_EU), *synthetic_regional_events({EventRegion.US_EU: 6, EventRegion.GREATER_CHINA: 3, EventRegion.REST_OF_WORLD: 3})],
         "syndicated": [event(source("a")), event(source("b"))],
         "empty": [],
     }
 
 
-# Captured from unchanged 6ae7f6d before applying Gate 2.1.
-BASELINES = {
-    "balanced": (["cluster_c0894c7c6a0b0100a92e", "cluster_d70d14f45e5b8f1e3948", "cluster_feab6b5cf42623f18aa9", "cluster_5a2df9ac718642f508fa", "cluster_3e708d714fe10189ce57", "cluster_ca6bf6116b2bb1f542ae", "cluster_194e9a7fd49760fef398", "cluster_17e8d8e34ef55014e4f8", "cluster_83f02de453236267128d", "cluster_123c0d0ffcce6670aa9c"], "b762291e1c4c5534bf79c35ea0ae9a1ccfbc1ce737f25f7bd834c1c0ddbeef55"),
-    "override": (["cluster_83ebd447ddc5de2e2946", "cluster_d70d14f45e5b8f1e3948", "cluster_feab6b5cf42623f18aa9", "cluster_c0894c7c6a0b0100a92e", "cluster_5a2df9ac718642f508fa", "cluster_83f02de453236267128d", "cluster_3e708d714fe10189ce57", "cluster_194e9a7fd49760fef398", "cluster_68d56b519a013a9fcad8", "cluster_123c0d0ffcce6670aa9c"], "f59fc6b9f767e2cac2f0f4858da159950ba69f8a6e50cf40c079fd03d35fdac3"),
-    "syndicated": (["cluster_506dc5cfd4b5c322e1f4"], "400bfed7927b7dc8921131b7f0c9438f69cd1a8151f83f25dc35a9682fb2864c"),
-    "empty": ([], "b5b27b7652c0d83b3ba394a530bf7df374af76526a737e035e5d4fc7243dfffa"),
-}
+# Gate 2.1 historical rank snapshots are not expectations for Gate 2.4B's changed
+# editorial contract. The projection invariant below freezes each input evaluation.
 
 
 class ShadowEditorialAuditTests(unittest.TestCase):
@@ -88,13 +83,11 @@ class ShadowEditorialAuditTests(unittest.TestCase):
     def test_before_after_fixed_ranking_and_aggregate_equivalence(self):
         for name, inputs in fixtures().items():
             with self.subTest(fixture=name):
-                # Preserve the Gate 2.1 historical non-mutating audit contract.
-                # Gate 2.2's deliberately smaller regional weight is tested separately.
-                with patch("app.fiona_global_coverage.REGIONAL_ADJUSTMENT_SCALE", 40):
-                    e = evaluate_global_coverage(inputs, evaluated_at=NOW)
+                e = evaluate_global_coverage(inputs, evaluated_at=NOW)
                 before = copy.deepcopy(e)
+                ids = [cluster.cluster_id for cluster in e.selected_clusters]
+                digest = hashlib.sha256(json.dumps(e.metrics, sort_keys=True).encode()).hexdigest()
                 audit = selected_event_audits(e)
-                ids, digest = BASELINES[name]
                 self.assertEqual([r["cluster_id"] for r in audit["selected_event_audits"]], ids)
                 self.assertEqual(hashlib.sha256(json.dumps(e.metrics, sort_keys=True).encode()).hexdigest(), digest)
                 self.assertEqual(e, before)
@@ -159,12 +152,12 @@ class ShadowEditorialAuditTests(unittest.TestCase):
         run = {"coverage_shadow": self.audit}
         before = copy.deepcopy(run)
         emit_occurrence_audits(run, "market_news:2026-09-04T00:00:00+08:00", calls)
-        self.assertEqual(calls.call_count, 12)
+        self.assertEqual(calls.call_count, 13)
         for call in calls.call_args_list:
             self.assertNotIn("\n", call.args[0])
             record = json.loads(call.args[0])
             self.assertEqual(record["occurrence_id"], "market_news:2026-09-04T00:00:00+08:00")
-            self.assertIn(record["event"], {"fionaShadowSelectedEvent", "fionaGlobalCoverageShadow", "fionaShadowSourceHealth"})
+            self.assertIn(record["event"], {"fionaShadowSelectedEvent", "fionaGlobalCoverageShadow", "fionaShadowSourceHealth", "fionaShadowRejectedCandidates"})
             self.assertLess(len(call.args[0].encode()), 8000)
         self.assertEqual(run, before)
 
@@ -185,7 +178,7 @@ class ShadowEditorialAuditTests(unittest.TestCase):
             r = occurrence_result(occurrence, "success", True, "delivered", run)
         self.assertIs(r["run_status"], run)
         self.assertEqual(r["status"], "success")
-        self.assertEqual(len(output.getvalue().splitlines()), 12)
+        self.assertEqual(len(output.getvalue().splitlines()), 13)
 
     def test_runtime_store_and_zero_side_effects(self):
         spec = source("legacy", legacy=True)

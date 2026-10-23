@@ -1,9 +1,19 @@
 # Fiona Version Matrix
 
 版本：V3.1-alpha.2
-状态：Gate 2 OPEN / Gate 2.2 remediation; Gate 1 CLOSED; Gate 3 LOCKED
+状态：Gate 2 OPEN; Gate 2.4B/B.1 controlled Shadow release candidate; Gate 1 CLOSED; Gate 3 LOCKED
 负责人：Wilson / Codex
-更新时间：2026-10-09
+更新时间：2026-10-24
+
+## 当前状态（优先于下方历史波次记录）
+
+发布前生产基线 ba52bcf：Gate2.3 持久化连续性修复已部署；用户可见行为仍为
+legacy/photo/en-US/image，cadence legacy，Delta off。
+Gate2.4B/B.1 独立编辑资格、摘要证据修正及有界审计通过受控发布前检查。
+本次只发布 Shadow 修正，不授权 global_631。实际部署结果须由 Railway 验收确认，
+不得将发布前 PASS 等同上线成功。部署成功后的目标为 REVISED SHADOW ACCEPTANCE PENDING。
+版本仍为 V3.1-alpha.2；不是 V3.1 GA，也不关闭 Gate2。
+见 [Gate2.4B](v3_1/gates/GATE_2_4B_EDITORIAL_QUALIFICATION.md)。
 
 ## 1. 版本总览
 

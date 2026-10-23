@@ -1,9 +1,24 @@
 # Fiona V3.1 Implementation Roadmap
 
 Version: V3.1-alpha.2
-Status: Gate 2 OPEN / Gate 2.2 remediation; Gate 3 LOCKED
+Status: Gate 2 OPEN; Gate 2.4B/B.1 controlled Shadow release candidate; Gate 3 LOCKED
 Owner: Wilson / Codex
-Updated: 2026-10-09
+Updated: 2026-10-24
+
+## Current Priority — Gate 2.4B
+
+Gate2.3 state continuity is the deployed ba52bcf baseline. Seven-run editorial
+review remains unsuccessful: 8 GOOD,17 ACCEPTABLE,38 QUESTIONABLE,7 INCORRECT.
+Gate2.4A identified relevance/quality/assertion/geography/novelty gaps, with
+explicit missing historical evidence. Gate2.4B addresses these locally and adds
+bounded rejection evidence. B.1 corrects evidence/novelty defects; controlled
+Shadow release is now authorized only after preflight PASS. No activation is approved.
+Next: verify automatic deployment, durable-state safety and subsequent natural
+Shadow editorial acceptance against the [contract/results](gates/GATE_2_4B_EDITORIAL_QUALIFICATION.md).
+Production remains legacy/photo/en-US; fixed cadence and Delta off. Gate3 locked.
+
+The following Gate2.2 priority is a historical October9 record; it does not
+supersede Gate2.3 continuity acceptance or authorize deployment.
 
 ## Current Priority — Gate 2.2
 

@@ -1,9 +1,22 @@
 # Fiona V3.1 Release Strategy
 
 Version: V3.1-alpha.2
-Status: Gate 2 Implemented / Shadow Candidate; Gate 3 LOCKED
+Status: Gate 2 OPEN; Gate 2.4B/B.1 controlled Shadow release candidate; Gate 3 LOCKED
 Owner: Wilson / Codex
-Updated: 2026-09-03
+Updated: 2026-10-24
+
+## Current local release boundary — Gate 2.4B
+
+Pre-release production is ba52bcf and legacy/photo/en-US/image. Wilson/Product
+authorized the exact Gate2.4B/B.1 boundary for controlled Shadow release only
+after final preflight PASS: one precise commit, normal push, automatic deployment.
+Do not change variables, activate global_631 or manually redeploy. Gate2.3
+Volume continuity remains protected. The release must
+collect new natural Shadow evidence and a blind editorial review; counts and
+local historical title probes are not production activation acceptance.
+Rollback must preserve the existing Volume/Ledger/Alert history. Root Shadow
+schema3.1 remains readable by the old release; the added editorial version is
+optional to old readers. No new flag or infrastructure is required locally.
 
 ## 1. Release Objective
 
@@ -71,13 +84,14 @@ milestones:
 | Value | Behavior |
 |---|---|
 | `legacy` | current source/ranking authority plus Gate 2 Shadow evaluation |
-| `global_631` | reserved activation profile; alpha.2 still enforces legacy authority |
+| `global_631` | existing Gate2.2 bridge makes the evaluated global event set authoritative; LOCAL validation only until explicit activation approval |
 
 - Default: `legacy`.
 - New behavior first runs in Shadow with candidate/selection comparison.
 - Invalid profile: warning + `legacy`. Ranking failures cannot affect legacy delivery.
 - The registry is release-validated; it is the sole production source list.
-- Alpha.2 never publishes Shadow selections, even if `global_631` is supplied.
+- Gate2.2 added an actual global_631 selection bridge. Production MUST remain
+  legacy; do not rely on a former hardcoded-legacy safeguard when testing flags.
 - No additional observability flag, scheduler, Telegram sender, or ledger is added.
 
 ### 3.4 `FIONA_CADENCE_MODE`

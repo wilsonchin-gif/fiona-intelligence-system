@@ -3,7 +3,37 @@
 - Version: V3.0.0 Production base + V3.1-alpha.2 Shadow Candidate
 - Status: Gate 1 CLOSED; Gate 2 implemented; global selection inactive
 - Owner: Fiona Engineering
-- Updated: 2026-10-09
+- Updated: 2026-10-24
+
+## Gate 2.4B/B.1 controlled Shadow release boundary
+
+Pre-release production baseline is ba52bcf, legacy/photo/en-US/image.
+Controlled Shadow release is authorized after final preflight PASS; actual
+deployment/health must be verified separately. No coverage activation is authorized.
+`fiona_editorial` adds typed, deterministic assertion, relevance, evidence,
+geography and novelty contracts consumed only by the Global Coverage path.
+B.1 uses bounded source claim evidence and publication/session identity without
+changing Runtime, collectors, delivery or the root state schema.
+
+```mermaid
+flowchart LR
+    Source[Unchanged registry / collectors] --> Editorial[Assertion / financial relevance / geography]
+    Editorial --> Scores[Materiality / independent evidence]
+    Scores --> Cluster[Existing conservative clustering]
+    ShadowHistory[Existing atomic 21-day Shadow history] --> Novelty[One editorial novelty index]
+    Cluster --> Novelty --> Qualify[Eligibility before soft regional ranking]
+    Qualify --> Audit[Bounded selected / rejected records]
+    Audit --> ShadowHistory
+    Qualify --> Authority[Existing coverage authority]
+    Legacy[Unchanged legacy selection] --> Authority
+    Authority --> Presentation[Unchanged renderer / caption / Telegram]
+```
+
+No second sender, renderer, occurrence, Ledger, Alert dispatcher or database.
+Scheduler/Ledger/Alerts and the five task contracts are frozen. Corrupt optional
+Shadow history is preserved and novelty becomes uncertain, not an empty claimed
+baseline; critical Scheduler/Alert state retains its existing fail-closed rules.
+See [Gate2.4B](../v3_1/gates/GATE_2_4B_EDITORIAL_QUALIFICATION.md).
 
 ## Gate 2.2 Coverage Authority
 

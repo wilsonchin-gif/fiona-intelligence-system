@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Sequence
 
+from app.fiona_editorial import EDITORIAL_VERSION
 from app.fiona_global_coverage import (
     CoverageEvaluation,
     NormalizedCoverageEvent,
@@ -45,8 +46,27 @@ class CoverageObservationStore:
             return store
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
-            records = payload.get("records", []) if isinstance(payload, dict) else []
-            store.records = [record for record in records if isinstance(record, dict)]
+            if not isinstance(payload, dict) or not isinstance(payload.get("records"), list):
+                raise ValueError("invalid_shadow_history")
+            if payload.get("editorial_state_version") not in {None, "gate2.4b", EDITORIAL_VERSION}:
+                raise ValueError("unsupported_editorial_state_version")
+            if any(not isinstance(record, dict) for record in payload["records"]):
+                raise ValueError("invalid_shadow_history_record")
+            for record in payload["records"]:
+                if _record_time(record) is None:
+                    raise ValueError("invalid_shadow_history_timestamp")
+                selected = record.get("selected_event_audits", [])
+                if not isinstance(selected, list) or any(not isinstance(item, dict) for item in selected):
+                    raise ValueError("invalid_shadow_editorial_records")
+                if any(not isinstance(item.get("editorial_memory", {}), dict) for item in selected):
+                    raise ValueError("invalid_editorial_memory")
+                for item in selected:
+                    memory = item.get("editorial_memory", {})
+                    if memory and (memory.get("schema_version") not in {"gate2.4b", EDITORIAL_VERSION}
+                                   or not isinstance(memory.get("family_key"), str)
+                                   or not isinstance(memory.get("fact_fingerprint"), str)):
+                        raise ValueError("invalid_editorial_identity")
+            store.records = payload["records"]
         except (OSError, ValueError, TypeError) as exc:
             store.load_error = type(exc).__name__
         return store
@@ -74,9 +94,12 @@ class CoverageObservationStore:
         self.records = retained
 
     def save(self) -> None:
+        if self.load_error:
+            raise ValueError("corrupt_shadow_history_preserved")
         from app.fiona_state import atomic_write_json
         payload = {
             "schema_version": COVERAGE_STATE_SCHEMA_VERSION,
+            "editorial_state_version": EDITORIAL_VERSION,
             "persistence": "volume_backed_if_mounted_otherwise_local",
             "records": self.records,
         }
@@ -243,17 +266,22 @@ def run_global_coverage_shadow(
             fetcher=fetcher,
         )
     health = _legacy_health(legacy_events, source_registry, evaluated_at, legacy_failures or {}) + expanded_health
+    from app.fiona_state import RuntimeStatePaths
+    state_paths = RuntimeStatePaths.from_environment(output_dir)
+    history_existed = state_paths.coverage_history.exists()
+    store = CoverageObservationStore.load(state_paths.coverage_history)
     evaluation = evaluate_global_coverage(
         [*legacy_events, *expanded_events],
         evaluated_at=evaluated_at,
         source_health=health,
+        editorial_history=store.records,
+        history_available=store.load_error is None and history_existed,
     )
-    from app.fiona_state import RuntimeStatePaths
-    state_paths = RuntimeStatePaths.from_environment(output_dir)
-    store = CoverageObservationStore.load(state_paths.coverage_history)
-    audit = {"editorial_rules_version": "gate2.2", **selected_event_audits(evaluation)}
-    store.record(evaluation, audit)
-    store.save()
+    audit = {"editorial_rules_version": EDITORIAL_VERSION, **selected_event_audits(evaluation)}
+    # Preserve corrupt evidence for operator review rather than resetting history.
+    if store.load_error is None:
+        store.record(evaluation, audit)
+        store.save()
     result = {
         "ok": True,
         "mode": "coverage_shadow",
@@ -274,6 +302,8 @@ def run_global_coverage_shadow(
         "telegram_api_calls": 0,
         "scheduler_ledger_mutations": 0,
         "formal_occurrences_created": 0,
+        "novelty_history_status": "unavailable_preserved" if store.load_error else "loaded" if history_existed else "missing_initialized",
+        "novelty_history_error": store.load_error,
     }
     if selection_sink is not None:
         selection_sink(evaluation)

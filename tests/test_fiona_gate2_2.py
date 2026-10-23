@@ -142,10 +142,11 @@ class EditorialMaterialityTests(unittest.TestCase):
     def test_override_representative_cases(self):
         for title in ("ECB emergency rate cut", "Systemic banking crisis", "War breaks out", "SEC major regulatory ban"):
             with self.subTest(title=title):
-                a = self.score(title)
-                self.assertTrue(a[3])
-                self.assertEqual(a[4], "systemic_or_exceptional_material_event")
-                self.assertEqual(a, self.score(title))
+                # The score-only helper lacks provenance/time and must not authorize delivery priority.
+                self.assertGreaterEqual(self.score(title)[0], 85)
+                a = event(source(source_type="Official", tier=SourceTier.TIER_1), title=title, summary="")
+                self.assertTrue(a.editorial.override_eligible)
+                self.assertEqual(a.override_reason, "supported_current_material_financial_event")
 
     def test_override_can_exceed_regional_target(self):
         e = evaluate_global_coverage([event(title="BOJ emergency rate hike", summary="")], evaluated_at=NOW)
@@ -213,7 +214,7 @@ class BoundedLoggingTests(unittest.TestCase):
         calls = Mock()
         emit_occurrence_audits({"coverage_shadow": {**e.metrics, **selected_event_audits(e), "source_health": []}}, "real", calls)
         rows = [json.loads(c.args[0]) for c in calls.call_args_list]
-        self.assertEqual(len(rows), 12)
+        self.assertEqual(len(rows), 13)
         self.assertEqual(sum(r["event"] == "fionaGlobalCoverageShadow" for r in rows), 1)
         self.assertEqual(sum(r["event"] == "fionaShadowSelectedEvent" for r in rows), 10)
         self.assertEqual(rows[0]["candidate_events"], 600)
@@ -251,7 +252,7 @@ class BoundedLoggingTests(unittest.TestCase):
         audit = selected_event_audits(e)
         calls = Mock()
         emit_occurrence_audits({"coverage_shadow": audit}, "real", calls)
-        self.assertEqual(calls.call_count, 12)
+        self.assertEqual(calls.call_count, 13)
         self.assertEqual(len(audit["selected_event_audits"]), 40)
 
 

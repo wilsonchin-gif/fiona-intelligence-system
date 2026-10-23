@@ -4,14 +4,27 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from enum import Enum
 from collections import Counter
 from typing import Any, Callable
 
-from app.fiona_global_coverage import CoverageEvaluation, REGIONAL_TARGETS, base_ranking_score
+from app.fiona_global_coverage import CoverageEvaluation, REGIONAL_TARGETS, base_ranking_score, eligibility_rejection
 
 MAX_AUDIT_RECORDS = 50
 MAX_IDENTITIES = 24
 MAX_LOG_SELECTED_RECORDS = 10
+MAX_REJECTED_RECORDS = 20
+MAX_REJECTED_BYTES = 16000
+
+
+def safe_contract(value: Any) -> Any:
+    if isinstance(value, Enum):
+        return value.value
+    if isinstance(value, dict):
+        return {safe_audit_text(str(k), 64): safe_contract(v) for k, v in list(value.items())[:24]}
+    if isinstance(value, (list, tuple)):
+        return [safe_contract(v) for v in value[:24]]
+    return safe_audit_text(value, 160) if isinstance(value, str) else value
 
 
 def safe_audit_text(value: str, limit: int = 240) -> str:
@@ -92,11 +105,60 @@ def selected_event_audits(evaluation: CoverageEvaluation) -> dict[str, Any]:
                 "adjustment_kind": "material_override" if cluster.material_override else "regional_balance",
             },
             "regional_target_context": {"target_share": target, "selected_before": rank - 1, "region_share_before": prior_share},
+            **editorial_audit(cluster),
         })
         preceding[cluster.event_region] += 1
+    selected_ids = set(original_ids)
+    rejected = sorted((c for c in evaluation.clusters if c.cluster_id not in selected_ids),
+                      key=lambda c: (-base_ranking_score(c), c.cluster_id))
+    rejections = []
+    rejected_bytes = 2
+    for cluster in rejected[:MAX_REJECTED_RECORDS]:
+        rejection = eligibility_rejection(cluster, evaluation.quality_floor) or ("ranking", "eligible_below_capacity_cutoff")
+        record = {"cluster_id": safe_audit_text(cluster.cluster_id, 80),
+                           "normalized_headline": safe_audit_text(cluster.normalized_headline, 180),
+                           "rejection_stage": rejection[0], "reason": rejection[1],
+                           "event_region": cluster.event_region.value, "materiality": cluster.materiality,
+                           "evidence_quality": cluster.quality_score,
+                           "base_ranking_score": round(base_ranking_score(cluster), 2)}
+        cost = len(json.dumps(record, ensure_ascii=False).encode()) + 1
+        if rejected_bytes + cost > MAX_REJECTED_BYTES:
+            break
+        rejections.append(record)
+        rejected_bytes += cost
     return {"evaluation_id": evaluation_id, "selected_event_audits": records,
+            "rejected_candidate_audits": rejections,
+            "rejected_audit_omitted": max(0, len(rejected) - len(rejections)),
             "ranking_changed": original_ids != [cluster.cluster_id for cluster in evaluation.selected_clusters],
             "audit_records_omitted": max(0, len(selected) - MAX_AUDIT_RECORDS)}
+
+
+def editorial_audit(cluster: Any) -> dict[str, Any]:
+    decision = cluster.editorial
+    if decision is None:
+        return {"editorial_contract_status": "missing"}
+    from dataclasses import asdict
+    supported = [e for e in cluster.events if e.editorial and e.editorial.relevance.eligible]
+    strongest = max(supported or cluster.events, key=lambda e: e.editorial.evidence_quality.value if e.editorial else 0)
+    parts = dict(strongest.editorial.evidence_quality.components)
+    parts["independent_corroboration"] = min(15, max(0, cluster.independent_source_count - 1) * 8)
+    return safe_contract({
+        "assertion_type": decision.assertion.assertion_type.value,
+        "assertion_decision": asdict(decision.assertion),
+        "financial_relevance_class": decision.relevance.relevance_class.value,
+        "transmission_channels": decision.relevance.transmission_channels,
+        "relevance_reason": decision.relevance.relevance_reason,
+        "evidence_quality": {"value": cluster.quality_score, "components": parts,
+                             "basis": decision.evidence_quality.evidence_status},
+        "geography_decision": asdict(decision.geography),
+        "novelty_decision": asdict(cluster.novelty),
+        "override_eligibility": {"eligible": cluster.material_override, "reason": decision.override_reason},
+        "final_selection_reason": "qualified_material_override" if cluster.material_override else "independent_editorial_gates_then_soft_regional_rank",
+        "editorial_memory": decision.memory,
+        "event_ids": [event.event_id for event in cluster.events[:MAX_IDENTITIES]],
+        "published_at": [event.published_at.isoformat() if event.published_at else None for event in cluster.events[:MAX_IDENTITIES]],
+        "category": cluster.category, "event_affected_markets": decision.event_affected_markets,
+    })
 
 
 def emit_occurrence_audits(run_status: dict[str, Any], occurrence_id: str,
@@ -106,7 +168,7 @@ def emit_occurrence_audits(run_status: dict[str, Any], occurrence_id: str,
         shadow = run_status.get("coverage_shadow") or {}
         if shadow.get("evaluation_id"):
             metrics = {key: value for key, value in shadow.items() if key not in {
-                "selected_event_audits", "source_health", "rolling_24h", "rolling_7d"
+                "selected_event_audits", "rejected_candidate_audits", "source_health", "rolling_24h", "rolling_7d"
             }}
             emit(json.dumps({"event": "fionaGlobalCoverageShadow", "occurrence_id": occurrence_id,
                              "log_selected_records_omitted": max(0, len(shadow.get("selected_event_audits", []))-MAX_LOG_SELECTED_RECORDS),
@@ -126,6 +188,12 @@ def emit_occurrence_audits(run_status: dict[str, Any], occurrence_id: str,
         for record in shadow.get("selected_event_audits", [])[:MAX_LOG_SELECTED_RECORDS]:
             payload = {**record, "occurrence_id": occurrence_id, "event": "fionaShadowSelectedEvent"}
             emit(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), flush=True)
+        if shadow.get("rejected_candidate_audits"):
+            emit(json.dumps({"event": "fionaShadowRejectedCandidates", "occurrence_id": occurrence_id,
+                             "evaluation_id": shadow.get("evaluation_id"),
+                             "candidates": shadow["rejected_candidate_audits"][:MAX_REJECTED_RECORDS],
+                             "omitted": shadow.get("rejected_audit_omitted", 0)},
+                            ensure_ascii=False, separators=(",", ":")), flush=True)
     except Exception:
         # Logging failure must not alter a completed delivery or ledger result.
         return
